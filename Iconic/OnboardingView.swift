@@ -33,12 +33,55 @@ struct OnboardingView: View {
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 40)
 
+            VStack(spacing: 12) {
+                HStack(spacing: 24) {
+                    VStack(spacing: 4) {
+                        Image(systemName: "folder.fill")
+                            .font(.system(size: 48))
+                            .foregroundStyle(.secondary)
+                        Text("Before")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Image(systemName: "arrow.right")
+                        .font(.title2)
+                        .foregroundStyle(.tertiary)
+                    VStack(spacing: 4) {
+                        ZStack {
+                            Image(systemName: "folder.fill")
+                                .font(.system(size: 48))
+                                .foregroundStyle(.blue)
+                            Image(systemName: "music.note")
+                                .font(.system(size: 20))
+                                .foregroundStyle(.white)
+                                .offset(y: 4)
+                        }
+                        Text("After")
+                            .font(.caption)
+                            .foregroundStyle(.blue)
+                    }
+                }
+
+                Text("Iconic gives your folders custom icons based on their names. Icons appear in Finder and are fully reversible.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 40)
+                    .padding(.top, 8)
+            }
+            .padding(.bottom, 16)
+
             Divider()
                 .padding(.vertical, 10)
 
             VStack(alignment: .leading, spacing: 16) {
-                Text("Choose Matching Mode")
-                    .font(.headline)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Get Started")
+                        .font(.headline)
+                    Text("Recommended: Start with Local Matching - works offline, no setup needed")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
 
                 VStack(spacing: 12) {
                     modeOption(
@@ -57,6 +100,10 @@ struct OnboardingView: View {
                         color: .purple
                     )
                 }
+
+                Text("You can enable AI matching anytime in Settings")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             .padding(16)
             .background(Color.gray.opacity(0.1))
@@ -87,7 +134,7 @@ struct OnboardingView: View {
             }
         }
         .padding(30)
-        .frame(width: 540, height: selectedMode == .ai ? 680 : 520)
+        .frame(width: 540, height: selectedMode == .ai ? 880 : 720)
         .animation(.easeInOut(duration: 0.2), value: selectedMode)
     }
 

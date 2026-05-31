@@ -28,45 +28,170 @@ struct PreferencesView: View {
     @State private var menuBarEnabled: Bool = false
     @State private var aiContentAnalysisEnabled: Bool = AIContentAnalysisStore.isEnabled
 
+    @State private var settingsSearchText: String = ""
+    @State private var isSearching: Bool = false
+
+    // Map of search keywords to tabs
+    private let settingsKeywords: [(keyword: String, tab: String)] = [
+        ("api", "Gemini AI"),
+        ("key", "Gemini AI"),
+        ("gemini", "Gemini AI"),
+        ("ai", "Gemini AI"),
+        ("color", "Appearance"),
+        ("theme", "Appearance"),
+        ("palette", "Appearance"),
+        ("season", "Appearance"),
+        ("appearance", "Appearance"),
+        ("background", "Background"),
+        ("menubar", "Background"),
+        ("menu bar", "Background"),
+        ("monitor", "Background"),
+        ("notification", "Background"),
+        ("auto", "Background"),
+        ("mapping", "Mappings"),
+        ("keyword", "Mappings"),
+        ("custom", "Mappings"),
+        ("rule", "Rules"),
+        ("pattern", "Rules"),
+        ("regex", "Rules"),
+        ("glob", "Rules"),
+        ("template", "Templates"),
+        ("style", "Templates"),
+        ("detection", "Detection"),
+        ("smart", "Detection"),
+        ("git", "Detection"),
+        ("xcode", "Detection"),
+        ("preset", "Presets"),
+        ("save", "Presets"),
+        ("import", "Presets"),
+        ("export", "Presets"),
+        ("analytics", "Analytics"),
+        ("stats", "Analytics"),
+        ("usage", "Analytics"),
+    ]
+
+    private var matchingTabs: Set<String> {
+        let query = settingsSearchText.lowercased()
+        guard !query.isEmpty else { return [] }
+        return Set(settingsKeywords
+            .filter { $0.keyword.contains(query) }
+            .map { $0.tab })
+    }
+
     var body: some View {
-        TabView {
-            geminiTab
-                .tabItem { Label("Gemini AI", systemImage: "sparkles") }
-                .padding(16)
+        VStack(spacing: 0) {
+            // Search bar
+            HStack {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                TextField("Search settings...", text: $settingsSearchText)
+                    .textFieldStyle(.plain)
+                    .onTapGesture {
+                        isSearching = true
+                    }
+                if !settingsSearchText.isEmpty {
+                    Button {
+                        settingsSearchText = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Color(nsColor: .textBackgroundColor).opacity(0.5))
 
-            appearanceTab
-                .tabItem { Label("Appearance", systemImage: "paintpalette") }
-                .padding(16)
+            // Search suggestions when focused but empty
+            if isSearching && settingsSearchText.isEmpty {
+                HStack(spacing: 8) {
+                    Text("Try:")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    ForEach(["API key", "color", "monitor", "rule"], id: \.self) { suggestion in
+                        Button(suggestion) {
+                            settingsSearchText = suggestion
+                        }
+                        .buttonStyle(.plain)
+                        .font(.caption)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .background(Color.gray.opacity(0.1))
+                        .cornerRadius(4)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 4)
+            }
 
-            backgroundTab
-                .tabItem { Label("Background", systemImage: "menubar.rectangle") }
-                .padding(16)
+            // Search results indicator
+            if !settingsSearchText.isEmpty {
+                if matchingTabs.isEmpty {
+                    Text("No settings found for '\(settingsSearchText)'")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 4)
+                } else {
+                    HStack(spacing: 4) {
+                        Text("Found in:")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        ForEach(Array(matchingTabs).sorted(), id: \.self) { tab in
+                            Text(tab)
+                                .font(.caption)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.accentColor.opacity(0.2))
+                                .cornerRadius(4)
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 4)
+                }
+                Divider()
+            }
 
-            mappingsTab
-                .tabItem { Label("Mappings", systemImage: "list.bullet.rectangle") }
-                .padding(16)
+            TabView {
+                geminiTab
+                    .tabItem { Label("Gemini AI", systemImage: "sparkles") }
+                    .padding(16)
 
-            rulesTab
-                .tabItem { Label("Rules", systemImage: "wand.and.stars") }
-                .padding(16)
+                appearanceTab
+                    .tabItem { Label("Appearance", systemImage: "paintpalette") }
+                    .padding(16)
 
-            templatesTab
-                .tabItem { Label("Templates", systemImage: "square.grid.2x2") }
-                .padding(16)
+                backgroundTab
+                    .tabItem { Label("Background", systemImage: "menubar.rectangle") }
+                    .padding(16)
 
-            detectionTab
-                .tabItem { Label("Detection", systemImage: "magnifyingglass") }
-                .padding(16)
+                mappingsTab
+                    .tabItem { Label("Mappings", systemImage: "list.bullet.rectangle") }
+                    .padding(16)
 
-            presetsTab
-                .tabItem { Label("Presets", systemImage: "square.stack.3d.up") }
-                .padding(16)
+                rulesTab
+                    .tabItem { Label("Rules", systemImage: "wand.and.stars") }
+                    .padding(16)
 
-            analyticsTab
-                .tabItem { Label("Analytics", systemImage: "chart.bar") }
-                .padding(16)
+                templatesTab
+                    .tabItem { Label("Templates", systemImage: "square.grid.2x2") }
+                    .padding(16)
+
+                detectionTab
+                    .tabItem { Label("Detection", systemImage: "magnifyingglass") }
+                    .padding(16)
+
+                presetsTab
+                    .tabItem { Label("Presets", systemImage: "square.stack.3d.up") }
+                    .padding(16)
+
+                analyticsTab
+                    .tabItem { Label("Analytics", systemImage: "chart.bar") }
+                    .padding(16)
+            }
         }
-        .frame(width: 620, height: 540)
+        .frame(width: 620, height: 580)
         .onAppear {
             settingsVM.loadState()
             smartDetectionEnabled = SmartContentDetectionStore.isEnabled
@@ -117,6 +242,18 @@ struct PreferencesView: View {
                     AIContentAnalysisStore.isEnabled = newValue
                 }
                 .disabled(!settingsVM.isAIEnabled)
+
+            if !settingsVM.isAIEnabled {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                        .font(.caption)
+                    Text("Enable 'Use AI matching' above to use this feature")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+                .padding(.leading, 20)
+            }
 
             Text("When enabled, AI considers folder contents (file types, project markers) in addition to folder names for more accurate suggestions. May be slower for large folders.")
                 .font(.caption)
@@ -259,6 +396,23 @@ struct PreferencesView: View {
                     .foregroundStyle(.secondary)
                     .padding(.leading, 20)
 
+                if backgroundMonitoringEnabled && rulesStore.rules.filter({ $0.autoApply }).isEmpty {
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                            .font(.caption)
+                        VStack(alignment: .leading) {
+                            Text("No auto-apply rules configured")
+                                .font(.caption)
+                                .foregroundStyle(.orange)
+                            Text("Create rules with 'Auto-Apply' enabled in the Rules tab for monitoring to work")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.leading, 20)
+                }
+
                 if backgroundMonitoringEnabled {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Monitored Locations:")
@@ -310,6 +464,18 @@ struct PreferencesView: View {
                         BackgroundMonitoringStore.notificationsEnabled = newValue
                     }
                     .disabled(!backgroundMonitoringEnabled)
+
+                if !backgroundMonitoringEnabled {
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                            .font(.caption)
+                        Text("Enable 'Monitor folders' above to use notifications")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+                    .padding(.leading, 20)
+                }
 
                 Text("Get notified when Iconic automatically applies an icon to a new folder.")
                     .font(.caption)
@@ -372,6 +538,14 @@ struct PreferencesView: View {
                             Task { await vm.scan(root) }
                         }
                     }
+                    .disabled(!AutoColorStore.isEnabled)
+
+                if !AutoColorStore.isEnabled {
+                    Text("Enable 'Automatically assign beautiful colors' above to use seasonal themes")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .padding(.leading, 20)
+                }
 
                 Text("Override category colors with a seasonal palette (Spring, Summer, Autumn, Winter). Updates automatically based on the current date.")
                     .font(.caption)
@@ -409,6 +583,27 @@ struct PreferencesView: View {
         }
     }
 
+    // MARK: - Matching Priority Banner
+
+    private var matchingPriorityBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "info.circle")
+                .foregroundStyle(.blue)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Matching Priority")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                Text("Rules → Smart Detection → Custom Mappings → AI → Built-in Dictionary")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding(10)
+        .background(Color.blue.opacity(0.08))
+        .cornerRadius(6)
+    }
+
     // MARK: - Mappings Tab
 
     private var mappingsTab: some View {
@@ -418,6 +613,8 @@ struct PreferencesView: View {
             Text("Custom mappings override the built-in dictionary. Keyword matching is case-insensitive.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            matchingPriorityBanner
 
             addRow
 
@@ -500,6 +697,29 @@ struct PreferencesView: View {
             Text("Rules take priority over all other matching. Higher-priority rules apply first. Enable Auto-Apply to apply matching icons immediately after scan.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            matchingPriorityBanner
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Match Types:")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                Text("• Contains: matches if pattern appears anywhere in folder name")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("• Exact: matches only if folder name equals pattern")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("• Glob: use * and ? wildcards (e.g. \"client-*\")")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("• Regex: use regular expressions for complex patterns")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(8)
+            .background(Color.gray.opacity(0.08))
+            .cornerRadius(6)
 
             HStack(spacing: 6) {
                 TextField("Pattern", text: $newRulePattern)
@@ -651,6 +871,8 @@ struct PreferencesView: View {
             Text("Analyze folder contents to automatically detect special types like git repos, Xcode projects, and media folders.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            matchingPriorityBanner
 
             Divider()
 

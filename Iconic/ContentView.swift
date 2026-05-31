@@ -30,6 +30,8 @@ struct ContentView: View {
     @State private var comparisonItem: FolderItem? = nil
     @State private var currentTip: String?
     @State private var hasShownContextMenuTip = UserDefaults.standard.bool(forKey: "iconic.tip.contextMenu.shown")
+    @State private var hasShownPostScanTip = UserDefaults.standard.bool(forKey: "iconic.tip.postScan.shown")
+    @State private var showWelcomeBanner = !UserDefaults.standard.bool(forKey: "iconic.welcome.shown")
     @FocusState private var listFocused: Bool
 
     private let tips = [
@@ -44,6 +46,12 @@ struct ContentView: View {
             header
             if let tip = currentTip {
                 tipBanner(tip)
+            }
+            if showWelcomeBanner && vm.items.isEmpty {
+                WelcomeBanner {
+                    showWelcomeBanner = false
+                    UserDefaults.standard.set(true, forKey: "iconic.welcome.shown")
+                }
             }
             Divider()
             content
@@ -77,6 +85,11 @@ struct ContentView: View {
             showInitialTipIfNeeded()
         }
         .onChange(of: vm.rootURLs) { _, _ in reloadFolderLists() }
+        .onChange(of: vm.items.count) { _, newCount in
+            if newCount > 0 && !hasShownPostScanTip {
+                showPostScanTutorial()
+            }
+        }
         .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
             handleDrop(providers: providers)
         }
@@ -259,6 +272,12 @@ struct ContentView: View {
         if !hasShownContextMenuTip, let first = tips.first {
             currentTip = first
         }
+    }
+
+    private func showPostScanTutorial() {
+        currentTip = "\u{2728} Found \(vm.items.count) folders! Click 'Apply All' to set icons, or click any folder to customize first."
+        hasShownPostScanTip = true
+        UserDefaults.standard.set(true, forKey: "iconic.tip.postScan.shown")
     }
 
     private func dismissCurrentTip() {
@@ -1166,6 +1185,41 @@ struct NewBadge: View {
             .background(Color.orange)
             .foregroundStyle(.white)
             .cornerRadius(3)
+    }
+}
+
+struct WelcomeBanner: View {
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "sparkles")
+                .font(.title2)
+                .foregroundStyle(.tint)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Welcome to Iconic!")
+                    .font(.headline)
+                Text("Choose a folder to get started. We'll automatically match each subfolder to a beautiful icon.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Button {
+                onDismiss()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(12)
+        .background(.tint.opacity(0.1))
+        .cornerRadius(8)
+        .padding(.horizontal, 12)
+        .padding(.top, 8)
     }
 }
 

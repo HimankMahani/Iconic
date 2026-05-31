@@ -6,7 +6,18 @@
 
 ## Core Features
 
-### 1. Folder Icon Management
+### 1. Menu Bar App & Background Monitoring ⭐ NEW
+- ✅ Run as menu bar app (stays in menu bar when window closes)
+- ✅ System-wide folder monitoring (Desktop, Documents, Downloads)
+- ✅ Auto-apply icons to new folders based on rules
+- ✅ Real-time FSEvents-based detection
+- ✅ Configurable monitored locations (add/remove)
+- ✅ macOS notifications when icons are applied
+- ✅ Enable/disable toggles for all features
+- ✅ Background preferences tab
+- ✅ Menu bar menu: Show Window, Background Monitoring, Preferences, Quit
+
+### 2. Folder Icon Management
 - ✅ Recursive folder scanning
 - ✅ SF Symbol matching (350+ built-in mappings)
 - ✅ Multi-folder selection and batch processing
@@ -207,9 +218,10 @@
 - ✅ Hover effects
 
 ### Preferences Window
-- ✅ 8 organized tabs
+- ✅ 9 organized tabs (added Background tab)
 - ✅ Gemini AI configuration
 - ✅ Appearance settings
+- ✅ **Background monitoring settings** ⭐ NEW
 - ✅ Custom mappings editor
 - ✅ Rules management
 - ✅ Templates library
@@ -383,6 +395,10 @@ Iconic/
 - [x] Error handling (SIP paths, permissions)
 - [x] First launch onboarding
 - [x] Settings persistence
+- [x] **Menu bar mode** ⭐ NEW
+- [x] **Background monitoring** ⭐ NEW
+- [x] **System-wide folder detection** ⭐ NEW
+- [x] **Notifications** ⭐ NEW
 
 ## Known Limitations
 
@@ -402,10 +418,11 @@ Iconic/
 - [ ] Custom icon upload
 - [ ] Batch rename folders
 - [ ] Icon animation preview
+- [ ] Watch entire file system (currently limited to specific locations)
 
 ---
 
-**Total Features Implemented**: 25 major feature categories  
-**Total Lines of Code**: ~5,000+  
-**Total Files**: 35+ Swift files  
+**Total Features Implemented**: 26 major feature categories (added Menu Bar & Background Monitoring)  
+**Total Lines of Code**: ~6,000+  
+**Total Files**: 38+ Swift files  
 **Dependencies**: Zero third-party dependencies

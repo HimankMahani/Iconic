@@ -1,0 +1,189 @@
+//
+//  OnboardingView.swift
+//  Iconic
+//
+//  First-launch onboarding sheet for Gemini API key setup.
+//
+
+import SwiftUI
+
+struct OnboardingView: View {
+
+    @Environment(\.dismiss) private var dismiss
+    @StateObject private var settingsVM = SettingsViewModel()
+    @State private var selectedMode: MatchingMode = .local
+
+    enum MatchingMode {
+        case ai, local
+    }
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "folder.badge.gearshape")
+                .font(.system(size: 60))
+                .foregroundStyle(.blue)
+
+            Text("Welcome to Iconic")
+                .font(.title)
+                .fontWeight(.bold)
+
+            Text("Automatically assign beautiful SF Symbol icons to your folders.")
+                .font(.body)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 40)
+
+            Divider()
+                .padding(.vertical, 10)
+
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Choose Matching Mode")
+                    .font(.headline)
+
+                VStack(spacing: 12) {
+                    modeOption(
+                        mode: .local,
+                        icon: "book.closed",
+                        title: "Local Matching",
+                        description: "350+ built-in keyword mappings. Fast, private, works offline.",
+                        color: .blue
+                    )
+
+                    modeOption(
+                        mode: .ai,
+                        icon: "sparkles",
+                        title: "AI Matching (Gemini)",
+                        description: "Smarter matching using Google's Gemini AI. Requires free API key.",
+                        color: .purple
+                    )
+                }
+            }
+            .padding(16)
+            .background(Color.gray.opacity(0.1))
+            .cornerRadius(10)
+
+            if selectedMode == .ai {
+                aiKeySection
+            }
+
+            Spacer()
+
+            HStack(spacing: 12) {
+                Button("Skip for Now") {
+                    dismiss()
+                }
+
+                Button(selectedMode == .ai && settingsVM.apiKeyInput.isEmpty ? "Continue without AI" : "Get Started") {
+                    if selectedMode == .ai && !settingsVM.apiKeyInput.trimmingCharacters(in: .whitespaces).isEmpty {
+                        settingsVM.saveAPIKey()
+                        settingsVM.toggleAI(true)
+                    } else {
+                        settingsVM.toggleAI(false)
+                    }
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+            }
+        }
+        .padding(30)
+        .frame(width: 540, height: selectedMode == .ai ? 680 : 520)
+        .animation(.easeInOut(duration: 0.2), value: selectedMode)
+    }
+
+    private func modeOption(mode: MatchingMode, icon: String, title: String, description: String, color: Color) -> some View {
+        Button {
+            selectedMode = mode
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.title2)
+                    .foregroundStyle(color)
+                    .frame(width: 40)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.body)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.primary)
+                    Text(description)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.leading)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                if selectedMode == mode {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                }
+            }
+            .padding(12)
+            .background(selectedMode == mode ? Color.accentColor.opacity(0.1) : Color.clear)
+            .cornerRadius(8)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(selectedMode == mode ? Color.accentColor : Color.gray.opacity(0.3), lineWidth: selectedMode == mode ? 2 : 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var aiKeySection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Gemini API Key")
+                .font(.headline)
+
+            Text("Get a free API key from Google AI Studio. You can always add this later in Settings.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            SecureField("Paste your API key here (optional)", text: $settingsVM.apiKeyInput)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit {
+                    if !settingsVM.apiKeyInput.isEmpty {
+                        settingsVM.saveAPIKey()
+                        settingsVM.toggleAI(true)
+                    }
+                }
+
+            HStack(spacing: 8) {
+                Button {
+                    settingsVM.testAPIKey()
+                } label: {
+                    if settingsVM.isTesting {
+                        ProgressView().controlSize(.small)
+                        Text("Testing...")
+                    } else {
+                        Text("Test Key")
+                    }
+                }
+                .disabled(settingsVM.apiKeyInput.trimmingCharacters(in: .whitespaces).isEmpty || settingsVM.isTesting)
+
+                if let result = settingsVM.testResult {
+                    switch result {
+                    case .success:
+                        Label("Valid", systemImage: "checkmark.seal.fill")
+                            .foregroundStyle(.green)
+                            .font(.caption)
+                    case .failure(let msg):
+                        Label(msg, systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.red)
+                            .font(.caption)
+                            .lineLimit(1)
+                    }
+                }
+            }
+
+            Link("Get a free API key from Google AI Studio →", destination: URL(string: "https://aistudio.google.com/apikey")!)
+                .font(.caption)
+        }
+        .padding(16)
+        .background(Color.purple.opacity(0.05))
+        .cornerRadius(10)
+    }
+}
+
+#Preview {
+    OnboardingView()
+}

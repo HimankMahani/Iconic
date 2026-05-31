@@ -116,7 +116,8 @@ struct GeminiService {
     ///   - folderNames: Array of folder names to match
     ///   - apiKey: Gemini API key
     ///   - learningExamples: Optional user preference examples for few-shot learning
-    static func matchFolders(_ folderNames: [String], apiKey: String, learningExamples: [(folder: String, symbol: String)]? = nil) async throws -> [String: MatchResult] {
+    ///   - contentAnalysis: Optional array of content analysis results to provide context
+    static func matchFolders(_ folderNames: [String], apiKey: String, learningExamples: [(folder: String, symbol: String)]? = nil, contentAnalysis: [FolderContentAnalyzer.ContentAnalysis]? = nil) async throws -> [String: MatchResult] {
         guard !apiKey.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw GeminiError.missingAPIKey
         }
@@ -149,7 +150,7 @@ struct GeminiService {
         }
 
         // Step 3: Query API for uncached folders only
-        let apiResults = try await queryAPI(folderNames: uncachedFolders, apiKey: apiKey, learningExamples: learningExamples)
+        let apiResults = try await queryAPI(folderNames: uncachedFolders, apiKey: apiKey, learningExamples: learningExamples, contentAnalysis: contentAnalysis)
 
         // Step 4: Merge API results with cached results
         for (folderName, matchResult) in apiResults {
@@ -245,13 +246,13 @@ struct GeminiService {
     // MARK: - Private API Methods
 
     /// Queries the Gemini API for folder matches (no caching)
-    private static func queryAPI(folderNames: [String], apiKey: String, learningExamples: [(folder: String, symbol: String)]? = nil) async throws -> [String: MatchResult] {
+    private static func queryAPI(folderNames: [String], apiKey: String, learningExamples: [(folder: String, symbol: String)]? = nil, contentAnalysis: [FolderContentAnalyzer.ContentAnalysis]? = nil) async throws -> [String: MatchResult] {
         let endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=\(apiKey)"
         guard let url = URL(string: endpoint) else {
             throw GeminiError.invalidURL
         }
 
-        let prompt = buildPrompt(folderNames: folderNames, learningExamples: learningExamples)
+        let prompt = buildPrompt(folderNames: folderNames, learningExamples: learningExamples, contentAnalysis: contentAnalysis)
         let requestBody = GeminiRequest(
             contents: [
                 GeminiRequest.Content(
@@ -297,7 +298,7 @@ struct GeminiService {
 
     // MARK: - Private
 
-    private static func buildPrompt(folderNames: [String], learningExamples: [(folder: String, symbol: String)]? = nil) -> String {
+    private static func buildPrompt(folderNames: [String], learningExamples: [(folder: String, symbol: String)]? = nil, contentAnalysis: [FolderContentAnalyzer.ContentAnalysis]? = nil) -> String {
         let list = folderNames.map { "\"\($0)\"" }.joined(separator: ", ")
 
         var prompt = """
@@ -306,6 +307,17 @@ struct GeminiService {
         FOLDER NAMES: [\(list)]
 
         """
+
+        // Add content analysis context if available
+        if let analyses = contentAnalysis, !analyses.isEmpty {
+            prompt += """
+            FOLDER CONTENT CONTEXT (use this to improve matching accuracy):
+            """
+            for analysis in analyses {
+                prompt += "\n- '\(analysis.folderName)': \(analysis.contextDescription)"
+            }
+            prompt += "\n\nIMPORTANT: Use the content context to make more accurate symbol choices. For example, a folder with photos should get a camera symbol, a Git repository should get a code-related symbol, etc.\n\n"
+        }
 
         // Add user preference examples if available (few-shot learning)
         if let examples = learningExamples, !examples.isEmpty {

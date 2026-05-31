@@ -492,8 +492,19 @@ final class IconicViewModel: ObservableObject {
         // Get learning examples from AILearningStore for few-shot learning
         let learningExamples = learningStore?.getAllExamples(limit: 20)
 
+        // Analyze folder contents if AI Content Analysis is enabled
+        // This provides additional context to improve AI matching accuracy
+        var contentAnalysis: [FolderContentAnalyzer.ContentAnalysis]? = nil
+        if AIContentAnalysisStore.isEnabled {
+            contentAnalysis = await Task.detached(priority: .userInitiated) {
+                urls.compactMap { url in
+                    FolderContentAnalyzer.analyze(url)
+                }
+            }.value
+        }
+
         do {
-            let geminiMatches = try await GeminiService.matchFolders(folderNames, apiKey: apiKey, learningExamples: learningExamples)
+            let geminiMatches = try await GeminiService.matchFolders(folderNames, apiKey: apiKey, learningExamples: learningExamples, contentAnalysis: contentAnalysis)
 
             let newItems: [FolderItem] = urls.map { url in
                 let name = url.lastPathComponent

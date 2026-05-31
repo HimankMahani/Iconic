@@ -26,6 +26,7 @@ struct PreferencesView: View {
     @State private var backgroundMonitoringEnabled: Bool = BackgroundMonitoringStore.isEnabled
     @State private var notificationsEnabled: Bool = BackgroundMonitoringStore.notificationsEnabled
     @State private var menuBarEnabled: Bool = false
+    @State private var aiContentAnalysisEnabled: Bool = AIContentAnalysisStore.isEnabled
 
     var body: some View {
         TabView {
@@ -73,6 +74,7 @@ struct PreferencesView: View {
             backgroundMonitoringEnabled = BackgroundMonitoringStore.isEnabled
             notificationsEnabled = BackgroundMonitoringStore.notificationsEnabled
             menuBarEnabled = menuBarManager.isMenuBarMode
+            aiContentAnalysisEnabled = AIContentAnalysisStore.isEnabled
         }
     }
 
@@ -107,6 +109,19 @@ struct PreferencesView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+            Divider()
+
+            Toggle("Analyze folder contents for better AI matching", isOn: $aiContentAnalysisEnabled)
+                .onChange(of: aiContentAnalysisEnabled) { _, newValue in
+                    AIContentAnalysisStore.isEnabled = newValue
+                }
+                .disabled(!settingsVM.isAIEnabled)
+
+            Text("When enabled, AI considers folder contents (file types, project markers) in addition to folder names for more accurate suggestions. May be slower for large folders.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.leading, 20)
 
             Spacer()
 

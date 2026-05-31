@@ -14,6 +14,7 @@ struct ContentView: View {
     @EnvironmentObject private var backupStore: BackupStore
     @State private var isDropTargeted = false
     @State private var showingShortcutsHelp = false
+    @State private var showingDiscoveryPanel = false
     @State private var showingRestoreConfirm = false
     @State private var recentFolders: [RecentFolder] = []
     @State private var favoriteFolders: [FavoriteFolder] = []
@@ -487,6 +488,36 @@ struct ContentView: View {
             .help("Keyboard Shortcuts (\u{2318}/)")
 
             Button {
+                showingDiscoveryPanel = true
+            } label: {
+                Image(systemName: "sparkles")
+            }
+            .buttonStyle(.borderless)
+            .help("Discover Features")
+            .popover(isPresented: $showingDiscoveryPanel, arrowEdge: .top) {
+                FeatureDiscoveryPanel(isShown: $showingDiscoveryPanel) { action in
+                    showingDiscoveryPanel = false
+                    switch action {
+                    case .browseSymbols:
+                        if vm.items.first != nil {
+                            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                        }
+                    case .createTemplate:
+                        if let firstItem = vm.items.first {
+                            templateSourceItem = firstItem
+                            showingSaveTemplate = true
+                        }
+                    case .openPreferences:
+                        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                    case .showShortcuts:
+                        showingShortcutsHelp = true
+                    case .enableMonitoring:
+                        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                    }
+                }
+            }
+
+            Button {
                 vm.chooseFolder()
             } label: {
                 Label("Choose Folders…", systemImage: "folder")
@@ -747,7 +778,8 @@ struct ContentView: View {
                         },
                         onShowComparison: {
                             comparisonItem = item
-                        }
+                        },
+                        willAutoApply: vm.autoApplyMatchedIDs.contains(item.id)
                     )
                     .id(item.id)
                     .overlay(alignment: .leading) {
@@ -824,6 +856,29 @@ struct ContentView: View {
 
             HStack(spacing: 10) {
                 matchingModeBadge
+
+                if BackgroundMonitoringStore.isEnabled {
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(.green)
+                            .frame(width: 6, height: 6)
+                            .overlay(
+                                Circle()
+                                    .stroke(.green.opacity(0.4), lineWidth: 4)
+                                    .scaleEffect(1.5)
+                                    .opacity(0.6)
+                            )
+                        Text("Monitoring")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.green.opacity(0.15))
+                    .foregroundStyle(.green)
+                    .cornerRadius(6)
+                    .help("Background monitoring is active. Watching \(BackgroundMonitoringStore.monitoredLocations.count) location(s).")
+                }
 
                 if let cache = vm.lastCacheInfo, cache.hitCount > 0 {
                     HStack(spacing: 4) {
@@ -1220,6 +1275,95 @@ struct WelcomeBanner: View {
         .cornerRadius(8)
         .padding(.horizontal, 12)
         .padding(.top, 8)
+    }
+}
+
+struct FeatureDiscoveryPanel: View {
+    @Binding var isShown: Bool
+    let onAction: (DiscoveryAction) -> Void
+
+    enum DiscoveryAction {
+        case browseSymbols
+        case createTemplate
+        case openPreferences
+        case showShortcuts
+        case enableMonitoring
+    }
+
+    private var features: [(icon: String, title: String, description: String, action: DiscoveryAction)] {
+        [
+            ("square.grid.3x3.fill", "Browse 6,000+ Symbols", "Use the Symbol Browser to find any SF Symbol", .browseSymbols),
+            ("square.grid.2x2", "Save Templates", "Create reusable icon styles with colors", .createTemplate),
+            ("command", "Keyboard Shortcuts", "Press \u{2318}/ to see all shortcuts", .showShortcuts),
+            ("menubar.rectangle", "Menu Bar Mode", "Keep Iconic running when window closes", .openPreferences),
+            ("eye", "Background Monitoring", "Auto-apply icons to new folders", .enableMonitoring),
+        ]
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Label("Discover Features", systemImage: "sparkles")
+                    .font(.headline)
+                Spacer()
+                Button {
+                    isShown = false
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(12)
+
+            Divider()
+
+            ScrollView {
+                VStack(spacing: 0) {
+                    ForEach(Array(features.enumerated()), id: \.offset) { index, feature in
+                        Button {
+                            onAction(feature.action)
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: feature.icon)
+                                    .font(.title3)
+                                    .foregroundStyle(.tint)
+                                    .frame(width: 28)
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(feature.title)
+                                        .font(.subheadline)
+                                        .fontWeight(.medium)
+                                        .foregroundStyle(.primary)
+                                    Text(feature.description)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+
+                                Spacer()
+
+                                Image(systemName: "chevron.right")
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 10)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+
+                        if index < features.count - 1 {
+                            Divider()
+                                .padding(.leading, 52)
+                        }
+                    }
+                }
+            }
+        }
+        .frame(width: 360, height: 320)
+        .background(.regularMaterial)
+        .cornerRadius(12)
+        .shadow(radius: 16)
     }
 }
 

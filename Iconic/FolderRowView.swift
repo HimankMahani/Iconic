@@ -31,6 +31,7 @@ struct FolderRowView: View {
     let templates: [IconTemplate]
     let onApplyTemplate: (IconTemplate) -> Void
     let onShowComparison: () -> Void
+    var willAutoApply: Bool = false
 
     @State private var showingSymbolEditor = false
     @State private var draftSymbol: String = ""
@@ -59,6 +60,22 @@ struct FolderRowView: View {
                 matchSourceBadge
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+
+            if willAutoApply {
+                HStack(spacing: 4) {
+                    Image(systemName: "wand.and.stars")
+                        .font(.caption)
+                    Text("Auto-Apply")
+                        .font(.caption2)
+                        .fontWeight(.medium)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(Color.purple.opacity(0.15))
+                .foregroundStyle(Color.purple)
+                .cornerRadius(6)
+                .help("This folder matches an auto-apply rule and will be applied automatically when you exit Preview Mode")
+            }
 
             statusBadge
 
@@ -138,6 +155,7 @@ struct FolderRowView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(isSelected ? Color.accentColor.opacity(0.18) : Color.clear)
+        .background(willAutoApply ? Color.purple.opacity(0.05) : Color.clear)
         .contentShape(Rectangle())
         .gesture(
             TapGesture().modifiers(.shift).onEnded { onExtendSelect() }

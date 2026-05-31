@@ -186,6 +186,11 @@ final class IconicViewModel: ObservableObject {
     @Published var showBatchSummary: Bool = false
     @Published var recentlyAppliedItemIDs: Set<UUID> = []
 
+    /// Number of SIP-protected folders found in the most recent scan. The UI
+    /// can use this to surface a banner explaining why some folders cannot
+    /// be modified.
+    @Published var sipProtectedCount: Int = 0
+
     // MARK: - Toast notifications
 
     enum ToastType {
@@ -556,6 +561,17 @@ final class IconicViewModel: ObservableObject {
         // Render previews off the main thread
         await renderPreviews(for: items)
 
+        // Flag SIP-protected folders so the user understands why some rows
+        // will fail to apply.
+        sipProtectedCount = items.filter { IconApplier.isSIPProtected($0.url) }.count
+        if sipProtectedCount > 0 {
+            showToast(
+                "\(sipProtectedCount) SIP-protected folder(s) found - they cannot be modified",
+                icon: "lock.shield.fill",
+                type: .warning
+            )
+        }
+
         // Auto-apply rules that opted in
         autoApplyMatchingRules()
     }
@@ -621,6 +637,17 @@ final class IconicViewModel: ObservableObject {
 
         // Render previews off the main thread
         await renderPreviews(for: items)
+
+        // Flag SIP-protected folders so the user understands why some rows
+        // will fail to apply.
+        sipProtectedCount = items.filter { IconApplier.isSIPProtected($0.url) }.count
+        if sipProtectedCount > 0 {
+            showToast(
+                "\(sipProtectedCount) SIP-protected folder(s) found - they cannot be modified",
+                icon: "lock.shield.fill",
+                type: .warning
+            )
+        }
 
         // Auto-apply rules that opted in
         autoApplyMatchingRules()
@@ -1063,6 +1090,31 @@ final class IconicViewModel: ObservableObject {
     func applyAll() {
         let snapshot = batchTargets
         guard !snapshot.isEmpty else { return }
+
+        // Surface SIP-protected folders before kicking off the batch so the
+        // user knows they'll be skipped (or the whole batch is unworkable).
+        let sipFolders = snapshot.filter { IconApplier.isSIPProtected($0.url) }
+        if !sipFolders.isEmpty {
+            let regularFolders = snapshot.filter { !IconApplier.isSIPProtected($0.url) }
+
+            if regularFolders.isEmpty {
+                errorInfo = ErrorInfo(
+                    message: "All selected folders are SIP-protected",
+                    suggestion: "macOS protects these folders. Choose folders in your home directory.",
+                    canRetry: false,
+                    isWarning: true
+                )
+                return
+            }
+
+            // Some folders will be skipped — let the user know but continue.
+            showToast(
+                "Skipping \(sipFolders.count) SIP-protected folder(s)",
+                icon: "lock.shield.fill",
+                type: .warning
+            )
+        }
+
         isApplying = true
         progress = 0
         currentProcessingIndex = 0

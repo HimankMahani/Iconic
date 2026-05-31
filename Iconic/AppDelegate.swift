@@ -41,6 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         if BackgroundMonitoringStore.isEnabled {
             startBackgroundMonitoring()
         }
+        menuBarManager.updateMonitoringStatus(BackgroundMonitoringStore.isEnabled)
 
         // Find main window
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
@@ -81,7 +82,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             stopBackgroundMonitoring()
         }
 
-        menuBarManager.updateMenu()
+        menuBarManager.updateMonitoringStatus(newState)
     }
 
     @objc func quitApp() {

@@ -10,6 +10,7 @@ import AppKit
 enum IconApplyError: LocalizedError {
     case setIconReturnedFalse(URL)
     case missingPath(URL)
+    case sipProtected(URL)
 
     var errorDescription: String? {
         switch self {
@@ -17,15 +18,55 @@ enum IconApplyError: LocalizedError {
             return "Couldn't change icon for “\(url.lastPathComponent)”. The folder may be SIP-protected or you don't have write permission."
         case .missingPath(let url):
             return "Folder no longer exists at “\(url.path)”."
+        case .sipProtected:
+            return "Cannot modify SIP-protected folder"
+        }
+    }
+
+    var recoverySuggestion: String? {
+        switch self {
+        case .sipProtected:
+            return "macOS protects this folder. Choose a folder in your home directory instead."
+        default:
+            return nil
         }
     }
 }
 
 struct IconApplier {
 
+    /// Returns true if the URL is in a SIP-protected location.
+    /// SIP protects /System, /usr (except /usr/local), /bin, /sbin, and /Library/Apple.
+    static func isSIPProtected(_ url: URL) -> Bool {
+        let path = url.path
+        let sipPaths = [
+            "/System/",
+            "/bin/",
+            "/sbin/",
+            "/Library/Apple/",
+        ]
+
+        // Check exact /usr (but allow /usr/local)
+        if path.hasPrefix("/usr/") && !path.hasPrefix("/usr/local/") {
+            return true
+        }
+
+        return sipPaths.contains { path.hasPrefix($0) }
+    }
+
+    /// Returns the folder items in `items` that are in SIP-protected locations.
+    static func sipProtectedFolders(in items: [FolderItem]) -> [FolderItem] {
+        items.filter { isSIPProtected($0.url) }
+    }
+
     /// Applies `icon` to `folder`. Pass `nil` to restore the default folder icon.
     /// Throws `IconApplyError` if the folder is SIP-protected or unwritable.
     static func apply(_ icon: NSImage?, to folder: URL) throws {
+        // Check SIP first so we surface a clear, actionable error before
+        // NSWorkspace returns a generic failure.
+        if isSIPProtected(folder) {
+            throw IconApplyError.sipProtected(folder)
+        }
         guard FileManager.default.fileExists(atPath: folder.path) else {
             throw IconApplyError.missingPath(folder)
         }

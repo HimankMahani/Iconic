@@ -4,11 +4,35 @@
 //
 //  REST client for Gemini API. Batch-matches folder names to SF Symbols.
 //  Uses URLSession, no third-party dependencies.
+//  Includes persistent caching to reduce API calls.
 //
 
 import Foundation
 
 struct GeminiService {
+
+    // MARK: - Cache
+
+    /// Cached AI response for a folder name
+    private struct CachedMatch: Codable {
+        let folderName: String
+        let symbolName: String
+        let confidence: Double
+        let timestamp: Date
+    }
+
+    /// Cache statistics for monitoring performance
+    struct CacheStats {
+        let totalEntries: Int
+        let hitRate: Double // 0.0 to 1.0
+        let cacheSize: Int // bytes
+    }
+
+    private static let cacheKey = "iconic.ai.cache.v1"
+
+    // Track cache hits/misses for statistics (session-only)
+    private static var cacheHits = 0
+    private static var cacheMisses = 0
 
     enum GeminiError: LocalizedError {
         case missingAPIKey
@@ -76,12 +100,23 @@ struct GeminiService {
     private struct SymbolMatch: Codable {
         let folder: String
         let symbol: String
+        let confidence: Double?
     }
 
-    /// Batch-matches folder names to SF Symbols using Gemini API.
-    /// Returns a dictionary mapping folder name → SF Symbol name.
+    /// Result of a symbol match with confidence score
+    struct MatchResult {
+        let symbol: String
+        let confidence: Double
+    }
+
+    /// Batch-matches folder names to SF Symbols using Gemini API with caching.
+    /// Returns a dictionary mapping folder name → MatchResult (symbol + confidence).
     /// Throws GeminiError on failure.
-    static func matchFolders(_ folderNames: [String], apiKey: String) async throws -> [String: String] {
+    /// - Parameters:
+    ///   - folderNames: Array of folder names to match
+    ///   - apiKey: Gemini API key
+    ///   - learningExamples: Optional user preference examples for few-shot learning
+    static func matchFolders(_ folderNames: [String], apiKey: String, learningExamples: [(folder: String, symbol: String)]? = nil) async throws -> [String: MatchResult] {
         guard !apiKey.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw GeminiError.missingAPIKey
         }
@@ -90,12 +125,133 @@ struct GeminiService {
             return [:]
         }
 
+        // Step 1: Load cache and check for cached matches
+        let cache = loadCache()
+        var results: [String: MatchResult] = [:]
+        var uncachedFolders: [String] = []
+
+        for folderName in folderNames {
+            let normalizedName = folderName.lowercased()
+
+            // Check if we have a cached match for this folder
+            if let cached = cache[normalizedName] {
+                results[folderName] = MatchResult(symbol: cached.symbolName, confidence: cached.confidence)
+                cacheHits += 1
+            } else {
+                uncachedFolders.append(folderName)
+                cacheMisses += 1
+            }
+        }
+
+        // Step 2: If all folders were cached, return immediately
+        if uncachedFolders.isEmpty {
+            return results
+        }
+
+        // Step 3: Query API for uncached folders only
+        let apiResults = try await queryAPI(folderNames: uncachedFolders, apiKey: apiKey, learningExamples: learningExamples)
+
+        // Step 4: Merge API results with cached results
+        for (folderName, matchResult) in apiResults {
+            results[folderName] = matchResult
+        }
+
+        // Step 5: Save new API results to cache
+        saveToCache(apiResults)
+
+        return results
+    }
+
+    /// Tests if the API key is valid by making a minimal API call.
+    static func testAPIKey(_ apiKey: String) async throws {
+        _ = try await matchFolders(["Test"], apiKey: apiKey)
+    }
+
+    // MARK: - Cache Management
+
+    /// Loads the persistent cache from UserDefaults
+    private static func loadCache() -> [String: CachedMatch] {
+        guard let data = UserDefaults.standard.data(forKey: cacheKey) else {
+            return [:]
+        }
+
+        do {
+            let decoder = JSONDecoder()
+            let cacheArray = try decoder.decode([CachedMatch].self, from: data)
+            // Convert array to dictionary with lowercased folder names as keys
+            return Dictionary(uniqueKeysWithValues: cacheArray.map { ($0.folderName.lowercased(), $0) })
+        } catch {
+            print("Failed to load cache: \(error)")
+            return [:]
+        }
+    }
+
+    /// Saves new matches to the persistent cache
+    private static func saveToCache(_ matches: [String: MatchResult]) {
+        guard !matches.isEmpty else { return }
+
+        // Load existing cache
+        var cache = loadCache()
+
+        // Add new matches with current timestamp
+        let now = Date()
+        for (folderName, matchResult) in matches {
+            let normalizedName = folderName.lowercased()
+            cache[normalizedName] = CachedMatch(
+                folderName: normalizedName,
+                symbolName: matchResult.symbol,
+                confidence: matchResult.confidence,
+                timestamp: now
+            )
+        }
+
+        // Save back to UserDefaults
+        do {
+            let encoder = JSONEncoder()
+            let cacheArray = Array(cache.values)
+            let data = try encoder.encode(cacheArray)
+            UserDefaults.standard.set(data, forKey: cacheKey)
+        } catch {
+            print("Failed to save cache: \(error)")
+        }
+    }
+
+    /// Clears the entire cache
+    static func clearCache() {
+        UserDefaults.standard.removeObject(forKey: cacheKey)
+        cacheHits = 0
+        cacheMisses = 0
+    }
+
+    /// Returns cache statistics
+    static func getCacheStats() -> CacheStats {
+        let cache = loadCache()
+        let totalRequests = cacheHits + cacheMisses
+        let hitRate = totalRequests > 0 ? Double(cacheHits) / Double(totalRequests) : 0.0
+
+        // Calculate approximate cache size
+        var cacheSize = 0
+        if let data = UserDefaults.standard.data(forKey: cacheKey) {
+            cacheSize = data.count
+        }
+
+        return CacheStats(
+            totalEntries: cache.count,
+            hitRate: hitRate,
+            cacheSize: cacheSize
+        )
+    }
+
+    // MARK: - Private API Methods
+
+    /// Queries the Gemini API for folder matches (no caching)
+    private static func queryAPI(folderNames: [String], apiKey: String, learningExamples: [(folder: String, symbol: String)]? = nil) async throws -> [String: MatchResult] {
         let endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=\(apiKey)"
         guard let url = URL(string: endpoint) else {
             throw GeminiError.invalidURL
         }
 
-        let prompt = buildPrompt(folderNames: folderNames)
+        let prompt = buildPrompt(folderNames: folderNames, learningExamples: learningExamples)
         let requestBody = GeminiRequest(
             contents: [
                 GeminiRequest.Content(
@@ -139,30 +295,83 @@ struct GeminiService {
         return try parseSymbolMatches(from: text)
     }
 
-    /// Tests if the API key is valid by making a minimal API call.
-    static func testAPIKey(_ apiKey: String) async throws {
-        _ = try await matchFolders(["Test"], apiKey: apiKey)
-    }
-
     // MARK: - Private
 
-    private static func buildPrompt(folderNames: [String]) -> String {
+    private static func buildPrompt(folderNames: [String], learningExamples: [(folder: String, symbol: String)]? = nil) -> String {
         let list = folderNames.map { "\"\($0)\"" }.joined(separator: ", ")
-        return """
-        Given these folder names: [\(list)].
 
-        For each one, return the single best matching Apple SF Symbol name from SF Symbols 5.
+        var prompt = """
+        You are an expert at matching folder names to Apple SF Symbols. Your goal is to find the most semantically appropriate, visually distinctive symbol for each folder.
 
-        Return ONLY a valid JSON array of objects with keys "folder" and "symbol". No markdown, no explanation, just the JSON array.
+        FOLDER NAMES: [\(list)]
 
-        Example format:
-        [{"folder": "Music", "symbol": "music.note"}, {"folder": "Photos", "symbol": "photo.stack"}]
-
-        Only use valid SF Symbol names that exist in SF Symbols 5. If unsure, use "folder.fill".
         """
+
+        // Add user preference examples if available (few-shot learning)
+        if let examples = learningExamples, !examples.isEmpty {
+            prompt += """
+            USER PREFERENCES (learn from these examples - the user has explicitly chosen these symbols):
+            """
+            for (folder, symbol) in examples {
+                prompt += "\n- '\(folder)' → '\(symbol)'"
+            }
+            prompt += "\n\nIMPORTANT: These are the user's actual preferences. When matching similar folder names, strongly prefer symbols that align with these examples. Give high confidence (0.95+) to matches that follow these patterns.\n\n"
+        }
+
+        prompt += """
+        GUIDELINES:
+        1. Prefer specific, descriptive symbols over generic ones (e.g., "camera.fill" over "photo")
+        2. Consider the folder's likely purpose and contents
+        3. Use filled variants (.fill) for better visibility on folder icons
+        4. Match semantic meaning, not just literal words (e.g., "finances" → "dollarsign.circle.fill", not "folder.fill")
+        5. For technical folders, use appropriate dev symbols (e.g., code, terminal, gear)
+        6. For creative folders, use artistic symbols (e.g., paintbrush, music.note, camera)
+        7. Only use valid SF Symbol names from SF Symbols 5
+
+        CONFIDENCE SCORING:
+        - 1.0: Perfect semantic match (e.g., "Music" → "music.note")
+        - 0.9: Strong match with clear association (e.g., "Photos" → "camera.fill")
+        - 0.8: Good match, reasonable interpretation (e.g., "Work" → "briefcase.fill")
+        - 0.7: Acceptable match, somewhat generic (e.g., "Files" → "doc.fill")
+        - 0.6 or below: Weak match, fallback to "folder.fill"
+
+        EXAMPLES OF GOOD MATCHES:
+        - "photos" → "camera.fill" (confidence: 0.95) - cameras create photos
+        - "music" → "music.note" (confidence: 1.0) - exact semantic match
+        - "code" → "chevron.left.forwardslash.chevron.right" (confidence: 0.95) - standard code symbol
+        - "documents" → "doc.text.fill" (confidence: 0.9) - documents contain text
+        - "downloads" → "arrow.down.circle.fill" (confidence: 0.95) - downloading action
+        - "videos" → "video.fill" (confidence: 1.0) - exact match
+        - "projects" → "folder.badge.gearshape" (confidence: 0.85) - work/configuration
+        - "archive" → "archivebox.fill" (confidence: 1.0) - exact match
+        - "trash" → "trash.fill" (confidence: 1.0) - exact match
+        - "finances" → "dollarsign.circle.fill" (confidence: 0.9) - money-related
+        - "health" → "heart.fill" (confidence: 0.9) - health/medical
+        - "travel" → "airplane" (confidence: 0.9) - travel/trips
+        - "recipes" → "fork.knife" (confidence: 0.9) - cooking/food
+        - "books" → "book.fill" (confidence: 1.0) - exact match
+        - "games" → "gamecontroller.fill" (confidence: 1.0) - gaming
+        - "design" → "paintbrush.fill" (confidence: 0.9) - creative work
+        - "backup" → "externaldrive.fill" (confidence: 0.9) - storage/backup
+
+        RESPONSE FORMAT:
+        Return ONLY a valid JSON array. No markdown code fences, no explanation, just the JSON array.
+
+        Each object must have exactly three keys:
+        - "folder": the original folder name (string)
+        - "symbol": the SF Symbol name (string)
+        - "confidence": your confidence score (number between 0 and 1)
+
+        Example:
+        [{"folder": "Music", "symbol": "music.note", "confidence": 1.0}, {"folder": "Photos", "symbol": "camera.fill", "confidence": 0.95}]
+
+        If you cannot find a good match (confidence < 0.6), use "folder.fill" with confidence 0.5.
+        """
+
+        return prompt
     }
 
-    private static func parseSymbolMatches(from text: String) throws -> [String: String] {
+    private static func parseSymbolMatches(from text: String) throws -> [String: MatchResult] {
         // Strip markdown code fences if present
         var cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if cleaned.hasPrefix("```json") {
@@ -181,6 +390,23 @@ struct GeminiService {
         }
 
         let matches = try JSONDecoder().decode([SymbolMatch].self, from: data)
-        return Dictionary(uniqueKeysWithValues: matches.map { ($0.folder, $0.symbol) })
+
+        // Convert to dictionary with MatchResult, validating confidence scores
+        var results: [String: MatchResult] = [:]
+        for match in matches {
+            // Default to 0.8 if confidence is missing (backward compatibility)
+            var confidence = match.confidence ?? 0.8
+
+            // Validate confidence is in valid range [0, 1]
+            if confidence < 0.0 {
+                confidence = 0.0
+            } else if confidence > 1.0 {
+                confidence = 1.0
+            }
+
+            results[match.folder] = MatchResult(symbol: match.symbol, confidence: confidence)
+        }
+
+        return results
     }
 }

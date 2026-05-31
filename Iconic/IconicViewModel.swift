@@ -294,14 +294,19 @@ final class IconicViewModel: ObservableObject {
     private let rulesStore: RulesStore?
     private let analyticsStore: AnalyticsStore?
     private let suggestionsStore: SmartSuggestionsStore?
+    private let learningStore: AILearningStore?
     private var securityScopeURL: URL?
     private var batchTask: Task<Void, Never>?
 
-    init(mappings: CustomMappingsStore, rulesStore: RulesStore? = nil, analyticsStore: AnalyticsStore? = nil, suggestionsStore: SmartSuggestionsStore? = nil) {
+    // Track AI suggestions so we can detect corrections
+    private var aiSuggestions: [UUID: String] = [:]
+
+    init(mappings: CustomMappingsStore, rulesStore: RulesStore? = nil, analyticsStore: AnalyticsStore? = nil, suggestionsStore: SmartSuggestionsStore? = nil, learningStore: AILearningStore? = nil) {
         self.mappings = mappings
         self.rulesStore = rulesStore
         self.analyticsStore = analyticsStore
         self.suggestionsStore = suggestionsStore
+        self.learningStore = learningStore
     }
 
     // MARK: - Folder selection
@@ -484,14 +489,18 @@ final class IconicViewModel: ObservableObject {
     private func scanWithGemini(urls: [URL], apiKey: String, customMappings: [String: String]) async {
         let folderNames = urls.map { $0.lastPathComponent }
 
+        // Get learning examples from AILearningStore for few-shot learning
+        let learningExamples = learningStore?.getAllExamples(limit: 20)
+
         do {
-            let geminiMatches = try await GeminiService.matchFolders(folderNames, apiKey: apiKey)
+            let geminiMatches = try await GeminiService.matchFolders(folderNames, apiKey: apiKey, learningExamples: learningExamples)
 
             let newItems: [FolderItem] = urls.map { url in
                 let name = url.lastPathComponent
                 var symbol: String
                 var ruleSymbolColor: NSColor?
                 var ruleFolderColor: NSColor?
+                var wasAISuggestion = false
 
                 // Highest priority: user-defined rules
                 if let rule = rulesStore?.firstMatch(for: name) {
@@ -502,18 +511,32 @@ final class IconicViewModel: ObservableObject {
                     symbol = detectedSym
                 } else if let customSym = customMappings[name.lowercased()] {
                     symbol = customSym
-                } else if let geminiSym = geminiMatches[name] {
-                    // Validate that the SF Symbol exists, fallback to local if not
-                    if NSImage(systemSymbolName: geminiSym, accessibilityDescription: nil) != nil {
-                        symbol = geminiSym
+                } else if let matchResult = geminiMatches[name] {
+                    // Use Gemini match if confidence is acceptable (>= 0.6)
+                    if matchResult.confidence >= 0.6 {
+                        // Validate that the SF Symbol exists, fallback to local if not
+                        if NSImage(systemSymbolName: matchResult.symbol, accessibilityDescription: nil) != nil {
+                            symbol = matchResult.symbol
+                            wasAISuggestion = true
+                        } else {
+                            symbol = SymbolMapper.symbol(for: name, customMappings: [:])
+                        }
                     } else {
+                        // Low confidence, use local matcher
                         symbol = SymbolMapper.symbol(for: name, customMappings: [:])
                     }
                 } else {
                     symbol = SymbolMapper.symbol(for: name, customMappings: [:])
                 }
 
-                return FolderItem(url: url, symbolName: symbol, symbolColor: ruleSymbolColor, folderColor: ruleFolderColor)
+                let item = FolderItem(url: url, symbolName: symbol, symbolColor: ruleSymbolColor, folderColor: ruleFolderColor)
+
+                // Track AI suggestions so we can detect corrections later
+                if wasAISuggestion {
+                    aiSuggestions[item.id] = symbol
+                }
+
+                return item
             }
             items = newItems
 
@@ -615,6 +638,20 @@ final class IconicViewModel: ObservableObject {
     /// Re-render the preview using the item's current `symbolNames`.
     /// Use after the user manually edits the symbol.
     func rerender(_ item: FolderItem) {
+        // Check if this was an AI suggestion that the user is now correcting
+        if let aiSuggestion = aiSuggestions[item.id],
+           aiSuggestion != item.symbolName,
+           matchingMode == .ai {
+            // Record the correction for future learning
+            learningStore?.recordCorrection(
+                folderName: item.displayName,
+                aiSuggestion: aiSuggestion,
+                userChoice: item.symbolName
+            )
+            // Clear the tracked suggestion since we've recorded it
+            aiSuggestions.removeValue(forKey: item.id)
+        }
+
         let syms = item.symbolNames
         let color = item.symbolColor ?? ColorPreferences.getDefaultColor()
         let folderTint = item.folderColor

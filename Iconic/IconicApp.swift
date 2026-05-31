@@ -17,6 +17,7 @@ struct IconicApp: App {
     @StateObject private var backupStore: BackupStore
     @StateObject private var analyticsStore: AnalyticsStore
     @StateObject private var suggestionsStore: SmartSuggestionsStore
+    @StateObject private var learningStore: AILearningStore
 
     init() {
         let m = CustomMappingsStore()
@@ -25,13 +26,15 @@ struct IconicApp: App {
         let b = BackupStore()
         let a = AnalyticsStore()
         let s = SmartSuggestionsStore()
+        let l = AILearningStore()
         _mappings = StateObject(wrappedValue: m)
         _rulesStore = StateObject(wrappedValue: r)
         _templatesStore = StateObject(wrappedValue: t)
         _backupStore = StateObject(wrappedValue: b)
         _analyticsStore = StateObject(wrappedValue: a)
         _suggestionsStore = StateObject(wrappedValue: s)
-        _vm = StateObject(wrappedValue: IconicViewModel(mappings: m, rulesStore: r, analyticsStore: a, suggestionsStore: s))
+        _learningStore = StateObject(wrappedValue: l)
+        _vm = StateObject(wrappedValue: IconicViewModel(mappings: m, rulesStore: r, analyticsStore: a, suggestionsStore: s, learningStore: l))
     }
 
     var body: some Scene {
@@ -44,6 +47,7 @@ struct IconicApp: App {
                 .environmentObject(backupStore)
                 .environmentObject(analyticsStore)
                 .environmentObject(suggestionsStore)
+                .environmentObject(learningStore)
                 .environmentObject(appDelegate.menuBarManager)
         }
         .windowStyle(.titleBar)
@@ -61,6 +65,7 @@ struct IconicApp: App {
                 .environmentObject(backupStore)
                 .environmentObject(analyticsStore)
                 .environmentObject(suggestionsStore)
+                .environmentObject(learningStore)
                 .environmentObject(appDelegate.menuBarManager)
         }
     }

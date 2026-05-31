@@ -8,6 +8,8 @@ import SwiftUI
 @main
 struct IconicApp: App {
 
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+
     @StateObject private var mappings: CustomMappingsStore
     @StateObject private var vm: IconicViewModel
     @StateObject private var rulesStore: RulesStore
@@ -42,6 +44,7 @@ struct IconicApp: App {
                 .environmentObject(backupStore)
                 .environmentObject(analyticsStore)
                 .environmentObject(suggestionsStore)
+                .environmentObject(appDelegate.menuBarManager)
         }
         .windowStyle(.titleBar)
         .windowResizability(.contentSize)
@@ -58,6 +61,7 @@ struct IconicApp: App {
                 .environmentObject(backupStore)
                 .environmentObject(analyticsStore)
                 .environmentObject(suggestionsStore)
+                .environmentObject(appDelegate.menuBarManager)
         }
     }
 }

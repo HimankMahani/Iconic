@@ -15,6 +15,7 @@ struct PreferencesView: View {
     @EnvironmentObject private var rulesStore: RulesStore
     @EnvironmentObject private var templatesStore: TemplatesStore
     @EnvironmentObject private var analyticsStore: AnalyticsStore
+    @EnvironmentObject private var menuBarManager: MenuBarManager
     @StateObject private var settingsVM = SettingsViewModel()
     @StateObject private var presetsStore = PresetsStore()
 
@@ -22,6 +23,9 @@ struct PreferencesView: View {
     @State private var newSymbol: String = ""
     @State private var smartDetectionEnabled: Bool = SmartContentDetectionStore.isEnabled
     @State private var seasonalThemeEnabled: Bool = SeasonalThemeStore.isEnabled
+    @State private var backgroundMonitoringEnabled: Bool = BackgroundMonitoringStore.isEnabled
+    @State private var notificationsEnabled: Bool = BackgroundMonitoringStore.notificationsEnabled
+    @State private var menuBarEnabled: Bool = false
 
     var body: some View {
         TabView {
@@ -31,6 +35,10 @@ struct PreferencesView: View {
 
             appearanceTab
                 .tabItem { Label("Appearance", systemImage: "paintpalette") }
+                .padding(16)
+
+            backgroundTab
+                .tabItem { Label("Background", systemImage: "menubar.rectangle") }
                 .padding(16)
 
             mappingsTab
@@ -62,6 +70,9 @@ struct PreferencesView: View {
             settingsVM.loadState()
             smartDetectionEnabled = SmartContentDetectionStore.isEnabled
             seasonalThemeEnabled = SeasonalThemeStore.isEnabled
+            backgroundMonitoringEnabled = BackgroundMonitoringStore.isEnabled
+            notificationsEnabled = BackgroundMonitoringStore.notificationsEnabled
+            menuBarEnabled = menuBarManager.isMenuBarMode
         }
     }
 
@@ -186,6 +197,124 @@ struct PreferencesView: View {
                         .foregroundStyle(.red)
                         .font(.caption)
                 }
+            }
+        }
+    }
+
+    // MARK: - Background Tab
+
+
+    private var backgroundTab: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Background Monitoring")
+                .font(.headline)
+            Text("Keep Iconic running in the menu bar and automatically apply icons to new folders.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 12) {
+                Toggle("Keep app in menu bar when window closes", isOn: $menuBarEnabled)
+                    .onChange(of: menuBarEnabled) { _, newValue in
+                        if newValue {
+                            menuBarManager.enable()
+                        } else {
+                            menuBarManager.disable()
+                        }
+                    }
+
+                Text("When enabled, closing the window keeps Iconic running in the menu bar. Access it from the menu bar icon.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 20)
+
+                Divider()
+
+                Toggle("Monitor folders for new subfolders", isOn: $backgroundMonitoringEnabled)
+                    .onChange(of: backgroundMonitoringEnabled) { _, newValue in
+                        BackgroundMonitoringStore.setEnabled(newValue)
+                        if newValue {
+                            NSApp.sendAction(#selector(AppDelegate.toggleBackgroundMonitoring), to: nil, from: nil)
+                        }
+                    }
+
+                Text("Automatically detect new folders in monitored locations and apply icons based on your rules.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 20)
+
+                if backgroundMonitoringEnabled {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Monitored Locations:")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+
+                        ForEach(BackgroundMonitoringStore.monitoredLocations, id: \.path) { location in
+                            HStack {
+                                Image(systemName: "folder")
+                                    .foregroundStyle(.secondary)
+                                Text(location.path)
+                                    .font(.caption)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                Spacer()
+                                Button {
+                                    BackgroundMonitoringStore.removeLocation(location)
+                                } label: {
+                                    Image(systemName: "minus.circle.fill")
+                                        .foregroundStyle(.red)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color(nsColor: .controlBackgroundColor))
+                            .cornerRadius(6)
+                        }
+
+                        Button("Add Location...") {
+                            let panel = NSOpenPanel()
+                            panel.canChooseFiles = false
+                            panel.canChooseDirectories = true
+                            panel.allowsMultipleSelection = false
+                            panel.prompt = "Add Location"
+                            if panel.runModal() == .OK, let url = panel.url {
+                                BackgroundMonitoringStore.addLocation(url)
+                            }
+                        }
+                        .controlSize(.small)
+                    }
+                    .padding(.leading, 20)
+                }
+
+                Divider()
+
+                Toggle("Show notifications when icons are applied", isOn: $notificationsEnabled)
+                    .onChange(of: notificationsEnabled) { _, newValue in
+                        BackgroundMonitoringStore.notificationsEnabled = newValue
+                    }
+                    .disabled(!backgroundMonitoringEnabled)
+
+                Text("Get notified when Iconic automatically applies an icon to a new folder.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 20)
+            }
+
+            Spacer()
+
+            if backgroundMonitoringEnabled {
+                HStack(spacing: 8) {
+                    Image(systemName: "info.circle")
+                        .foregroundStyle(.blue)
+                    Text("Background monitoring only works with auto-apply rules. Create rules in the Rules tab and enable \"Auto-Apply\".")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(12)
+                .background(Color.blue.opacity(0.1))
+                .cornerRadius(8)
             }
         }
     }

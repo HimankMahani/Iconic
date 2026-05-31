@@ -56,6 +56,7 @@ struct FolderRowView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                matchSourceBadge
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -121,6 +122,8 @@ struct FolderRowView: View {
             .buttonStyle(.borderless)
             .help("Compare before/after")
 
+            moreOptionsMenu
+
             Button("Restore") { onRestore() }
                 .buttonStyle(.bordered)
                 .disabled(isDryRunMode)
@@ -174,6 +177,77 @@ struct FolderRowView: View {
         }
     }
 
+    private var moreOptionsMenu: some View {
+        Menu {
+            Button {
+                onReveal()
+            } label: {
+                Label("Reveal in Finder", systemImage: "folder")
+            }
+
+            Button {
+                onCopyPath()
+            } label: {
+                Label("Copy Path", systemImage: "doc.on.doc")
+            }
+
+            Divider()
+
+            Button {
+                onCopySettings()
+            } label: {
+                Label("Copy Icon Settings", systemImage: "doc.on.clipboard")
+            }
+
+            Button {
+                onPasteSettings()
+            } label: {
+                Label("Paste Icon Settings", systemImage: "clipboard")
+            }
+            .disabled(!IconClipboard.hasContent())
+
+            Divider()
+
+            Button {
+                onSaveAsTemplate()
+            } label: {
+                Label("Save as Template", systemImage: "square.and.arrow.down")
+            }
+
+            if !templates.isEmpty {
+                Menu("Apply Template") {
+                    ForEach(templates) { template in
+                        Button(template.name) {
+                            onApplyTemplate(template)
+                        }
+                    }
+                }
+            }
+
+            Divider()
+
+            Button {
+                onShowComparison()
+            } label: {
+                Label("Compare Before/After", systemImage: "rectangle.split.2x1")
+            }
+
+            Button {
+                onAddExcludePattern()
+            } label: {
+                Label("Add to Exclude Patterns", systemImage: "minus.circle")
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle")
+                .font(.system(size: 14))
+                .foregroundStyle(.secondary)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("More options (or right-click row)")
+    }
+
     @ViewBuilder
     private var preview: some View {
         if let img = item.preview {
@@ -215,6 +289,21 @@ struct FolderRowView: View {
                 .foregroundStyle(.red)
                 .help(msg)
         }
+    }
+
+    private var matchSourceBadge: some View {
+        HStack(spacing: 4) {
+            Image(systemName: item.matchSource.icon)
+                .font(.caption2)
+            Text(item.matchSource.displayName)
+                .font(.caption2)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(item.matchSource.color.opacity(0.15))
+        .foregroundStyle(item.matchSource.color)
+        .cornerRadius(4)
+        .help("How this icon was matched")
     }
 
     private var symbolEditor: some View {

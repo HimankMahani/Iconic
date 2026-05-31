@@ -34,31 +34,51 @@ struct GeminiService {
     private static var cacheHits = 0
     private static var cacheMisses = 0
 
-    enum GeminiError: LocalizedError {
+    enum GeminiError: LocalizedError, Equatable {
         case missingAPIKey
+        case invalidAPIKeyFormat
         case invalidURL
-        case networkError(Error)
+        case networkError(String)
         case invalidResponse
         case apiError(String)
-        case rateLimitExceeded
+        case rateLimitExceeded(retryAfterSeconds: Int)
         case invalidJSON
+        case offline
 
         var errorDescription: String? {
             switch self {
             case .missingAPIKey:
-                return "Gemini API key not found. Please add it in Settings."
+                return "API key not found. Add one in Settings → Gemini AI."
+            case .invalidAPIKeyFormat:
+                return "Invalid API key format. Keys start with 'AIza' and are 39 characters."
             case .invalidURL:
-                return "Invalid Gemini API endpoint URL."
-            case .networkError(let error):
-                return "Network error: \(error.localizedDescription)"
+                return "Invalid API endpoint. Please report this bug."
+            case .networkError(let detail):
+                return "Network error: \(detail)"
             case .invalidResponse:
-                return "Gemini returned an invalid response."
+                return "Gemini returned an invalid response. Try again."
             case .apiError(let message):
-                return "Gemini API error: \(message)"
-            case .rateLimitExceeded:
-                return "Gemini API rate limit exceeded. Try again later."
+                return "API error: \(message)"
+            case .rateLimitExceeded(let seconds):
+                let minutes = max(1, (seconds + 59) / 60)
+                return "Rate limit reached. Try again in \(minutes) minute(s)."
             case .invalidJSON:
-                return "Failed to parse Gemini response."
+                return "Failed to parse AI response. Using local matching."
+            case .offline:
+                return "No internet connection. Using local matching."
+            }
+        }
+
+        var recoverySuggestion: String? {
+            switch self {
+            case .missingAPIKey:
+                return "Get a free key at https://aistudio.google.com/apikey"
+            case .rateLimitExceeded:
+                return "Free tier allows 15 requests/minute"
+            case .offline, .networkError:
+                return "Check your internet connection"
+            default:
+                return nil
             }
         }
     }
@@ -267,14 +287,36 @@ struct GeminiService {
         request.httpBody = try JSONEncoder().encode(requestBody)
         request.timeoutInterval = 30
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch let urlError as URLError {
+            switch urlError.code {
+            case .notConnectedToInternet, .networkConnectionLost:
+                throw GeminiError.offline
+            case .timedOut:
+                throw GeminiError.networkError("Request timed out. Try again.")
+            case .cannotFindHost, .cannotConnectToHost:
+                throw GeminiError.networkError("Cannot reach Gemini servers.")
+            default:
+                throw GeminiError.networkError(urlError.localizedDescription)
+            }
+        }
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw GeminiError.invalidResponse
         }
 
         if httpResponse.statusCode == 429 {
-            throw GeminiError.rateLimitExceeded
+            // Parse Retry-After header (RFC 7231: either delta-seconds or HTTP-date).
+            // Default to 60 seconds if header is missing or unparseable.
+            var retryAfter = 60
+            if let header = httpResponse.value(forHTTPHeaderField: "Retry-After"),
+               let seconds = Int(header.trimmingCharacters(in: .whitespaces)) {
+                retryAfter = seconds
+            }
+            throw GeminiError.rateLimitExceeded(retryAfterSeconds: retryAfter)
         }
 
         guard httpResponse.statusCode == 200 else {

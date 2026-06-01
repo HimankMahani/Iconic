@@ -714,8 +714,33 @@ final class IconicViewModel: ObservableObject {
         }
     }
 
+    /// Resolves a folder name to a glyph (SF Symbol name OR emoji) using the
+    /// local matcher matching the current icon style. Lets the rest of the
+    /// scan code branch on style in one place.
+    private static func localGlyph(for name: String, customMappings: [String: String]) -> String {
+        switch IconStyleStore.current {
+        case .sfSymbol:
+            return SymbolMapper.symbol(for: name, customMappings: customMappings)
+        case .emoji:
+            return EmojiMapper.emoji(for: name, customMappings: customMappings)
+        }
+    }
+
+    /// Validates that a glyph returned by AI is renderable for the current
+    /// icon style. For SF Symbols this checks `NSImage(systemSymbolName:)`;
+    /// for emoji we accept any string with at least one emoji scalar.
+    private static func isValidAIGlyph(_ glyph: String) -> Bool {
+        switch IconStyleStore.current {
+        case .sfSymbol:
+            return NSImage(systemSymbolName: glyph, accessibilityDescription: nil) != nil
+        case .emoji:
+            return glyph.isEmojiGlyph
+        }
+    }
+
     private func scanWithGemini(urls: [URL], apiKey: String, customMappings: [String: String]) async {
         let folderNames = urls.map { $0.lastPathComponent }
+        let iconStyle = IconStyleStore.current
 
         // Get learning examples from AILearningStore for few-shot learning
         let learningExamples = learningStore?.getAllExamples(limit: 20)
@@ -736,7 +761,7 @@ final class IconicViewModel: ObservableObject {
         let cacheEntriesBefore = GeminiService.getCacheStats().totalEntries
 
         do {
-            let geminiMatches = try await GeminiService.matchFolders(folderNames, apiKey: apiKey, learningExamples: learningExamples, contentAnalysis: contentAnalysis)
+            let geminiMatches = try await GeminiService.matchFolders(folderNames, apiKey: apiKey, style: iconStyle, learningExamples: learningExamples, contentAnalysis: contentAnalysis)
 
             // Compute per-scan cache info: any folder that did NOT add a new
             // cache entry was a hit (already cached). New entries equal misses.
@@ -770,23 +795,24 @@ final class IconicViewModel: ObservableObject {
                 } else if let matchResult = geminiMatches[name] {
                     // Use Gemini match if confidence is acceptable (>= 0.6)
                     if matchResult.confidence >= 0.6 {
-                        // Validate that the SF Symbol exists, fallback to local if not
-                        if NSImage(systemSymbolName: matchResult.symbol, accessibilityDescription: nil) != nil {
+                        // Validate the glyph renders for the current icon style;
+                        // fall back to the local matcher (style-aware) if not.
+                        if Self.isValidAIGlyph(matchResult.symbol) {
                             symbol = matchResult.symbol
                             wasAISuggestion = true
                             aiConfidence = matchResult.confidence
                             source = .aiSuggestion(confidence: matchResult.confidence)
                         } else {
-                            symbol = SymbolMapper.symbol(for: name, customMappings: [:])
+                            symbol = Self.localGlyph(for: name, customMappings: [:])
                             source = .localDictionary
                         }
                     } else {
                         // Low confidence, use local matcher
-                        symbol = SymbolMapper.symbol(for: name, customMappings: [:])
+                        symbol = Self.localGlyph(for: name, customMappings: [:])
                         source = .localDictionary
                     }
                 } else {
-                    symbol = SymbolMapper.symbol(for: name, customMappings: [:])
+                    symbol = Self.localGlyph(for: name, customMappings: [:])
                     source = .localDictionary
                 }
 
@@ -847,7 +873,7 @@ final class IconicViewModel: ObservableObject {
                 sym = customSym
                 source = .customMapping
             } else {
-                sym = SymbolMapper.symbol(for: name, customMappings: customMappings)
+                sym = Self.localGlyph(for: name, customMappings: customMappings)
                 source = .localDictionary
             }
             let item = FolderItem(url: u, symbolName: sym, symbolColor: ruleSymbolColor, folderColor: ruleFolderColor)
@@ -934,7 +960,7 @@ final class IconicViewModel: ObservableObject {
     /// Use after custom mappings change.
     func refreshSymbol(for item: FolderItem) {
         let custom = mappings.dictionary
-        item.symbolNames = [SymbolMapper.symbol(for: item.url.lastPathComponent, customMappings: custom)]
+        item.symbolNames = [Self.localGlyph(for: item.url.lastPathComponent, customMappings: custom)]
         rerender(item)
     }
 
@@ -1007,7 +1033,7 @@ final class IconicViewModel: ObservableObject {
 
     /// Darker, slightly translucent version of `color` — used as the SF
     /// Symbol color so it reads as a tinted etching of the folder body.
-    private static func symbolShade(of color: NSColor) -> NSColor {
+    static func symbolShade(of color: NSColor) -> NSColor {
         guard let rgb = color.usingColorSpace(.sRGB) else { return color }
         var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
         rgb.getHue(&h, saturation: &s, brightness: &b, alpha: &a)
@@ -1377,7 +1403,7 @@ final class IconicViewModel: ObservableObject {
             symbol = customSym
             source = .customMapping
         } else {
-            symbol = SymbolMapper.symbol(for: name, customMappings: custom)
+            symbol = Self.localGlyph(for: name, customMappings: custom)
             source = .localDictionary
         }
 

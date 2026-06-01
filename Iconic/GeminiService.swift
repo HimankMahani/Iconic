@@ -28,7 +28,15 @@ struct GeminiService {
         let cacheSize: Int // bytes
     }
 
-    private static let cacheKey = "iconic.ai.cache.v1"
+    private static let sfSymbolCacheKey = "iconic.ai.cache.v1"
+    private static let emojiCacheKey = "iconic.ai.cache.emoji.v1"
+
+    private static func userDefaultsCacheKey(for style: IconStyle) -> String {
+        switch style {
+        case .sfSymbol: return sfSymbolCacheKey
+        case .emoji:    return emojiCacheKey
+        }
+    }
 
     // Track cache hits/misses for statistics (session-only)
     private static var cacheHits = 0
@@ -129,15 +137,21 @@ struct GeminiService {
         let confidence: Double
     }
 
-    /// Batch-matches folder names to SF Symbols using Gemini API with caching.
-    /// Returns a dictionary mapping folder name → MatchResult (symbol + confidence).
+    /// Batch-matches folder names to SF Symbols (or emoji, when `style` is `.emoji`)
+    /// using Gemini API with caching.
+    /// Returns a dictionary mapping folder name → MatchResult (symbol/emoji + confidence).
     /// Throws GeminiError on failure.
     /// - Parameters:
     ///   - folderNames: Array of folder names to match
     ///   - apiKey: Gemini API key
+    ///   - style: Whether to return SF Symbol names or single-emoji strings
     ///   - learningExamples: Optional user preference examples for few-shot learning
     ///   - contentAnalysis: Optional array of content analysis results to provide context
-    static func matchFolders(_ folderNames: [String], apiKey: String, learningExamples: [(folder: String, symbol: String)]? = nil, contentAnalysis: [FolderContentAnalyzer.ContentAnalysis]? = nil) async throws -> [String: MatchResult] {
+    static func matchFolders(_ folderNames: [String],
+                             apiKey: String,
+                             style: IconStyle = .sfSymbol,
+                             learningExamples: [(folder: String, symbol: String)]? = nil,
+                             contentAnalysis: [FolderContentAnalyzer.ContentAnalysis]? = nil) async throws -> [String: MatchResult] {
         guard !apiKey.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw GeminiError.missingAPIKey
         }
@@ -147,7 +161,7 @@ struct GeminiService {
         }
 
         // Step 1: Load cache and check for cached matches
-        let cache = loadCache()
+        let cache = loadCache(style: style)
         var results: [String: MatchResult] = [:]
         var uncachedFolders: [String] = []
 
@@ -170,7 +184,7 @@ struct GeminiService {
         }
 
         // Step 3: Query API for uncached folders only
-        let apiResults = try await queryAPI(folderNames: uncachedFolders, apiKey: apiKey, learningExamples: learningExamples, contentAnalysis: contentAnalysis)
+        let apiResults = try await queryAPI(folderNames: uncachedFolders, apiKey: apiKey, style: style, learningExamples: learningExamples, contentAnalysis: contentAnalysis)
 
         // Step 4: Merge API results with cached results
         for (folderName, matchResult) in apiResults {
@@ -178,7 +192,7 @@ struct GeminiService {
         }
 
         // Step 5: Save new API results to cache
-        saveToCache(apiResults)
+        saveToCache(apiResults, style: style)
 
         return results
     }
@@ -190,9 +204,9 @@ struct GeminiService {
 
     // MARK: - Cache Management
 
-    /// Loads the persistent cache from UserDefaults
-    private static func loadCache() -> [String: CachedMatch] {
-        guard let data = UserDefaults.standard.data(forKey: cacheKey) else {
+    /// Loads the persistent cache from UserDefaults for the given style.
+    private static func loadCache(style: IconStyle = .sfSymbol) -> [String: CachedMatch] {
+        guard let data = UserDefaults.standard.data(forKey: userDefaultsCacheKey(for: style)) else {
             return [:]
         }
 
@@ -207,12 +221,12 @@ struct GeminiService {
         }
     }
 
-    /// Saves new matches to the persistent cache
-    private static func saveToCache(_ matches: [String: MatchResult]) {
+    /// Saves new matches to the persistent cache for the given style.
+    private static func saveToCache(_ matches: [String: MatchResult], style: IconStyle = .sfSymbol) {
         guard !matches.isEmpty else { return }
 
         // Load existing cache
-        var cache = loadCache()
+        var cache = loadCache(style: style)
 
         // Add new matches with current timestamp
         let now = Date()
@@ -231,28 +245,30 @@ struct GeminiService {
             let encoder = JSONEncoder()
             let cacheArray = Array(cache.values)
             let data = try encoder.encode(cacheArray)
-            UserDefaults.standard.set(data, forKey: cacheKey)
+            UserDefaults.standard.set(data, forKey: userDefaultsCacheKey(for: style))
         } catch {
             print("Failed to save cache: \(error)")
         }
     }
 
-    /// Clears the entire cache
+    /// Clears the entire cache (both styles).
     static func clearCache() {
-        UserDefaults.standard.removeObject(forKey: cacheKey)
+        UserDefaults.standard.removeObject(forKey: sfSymbolCacheKey)
+        UserDefaults.standard.removeObject(forKey: emojiCacheKey)
         cacheHits = 0
         cacheMisses = 0
     }
 
-    /// Returns cache statistics
+    /// Returns cache statistics for the currently-selected style.
     static func getCacheStats() -> CacheStats {
-        let cache = loadCache()
+        let style = IconStyleStore.current
+        let cache = loadCache(style: style)
         let totalRequests = cacheHits + cacheMisses
         let hitRate = totalRequests > 0 ? Double(cacheHits) / Double(totalRequests) : 0.0
 
         // Calculate approximate cache size
         var cacheSize = 0
-        if let data = UserDefaults.standard.data(forKey: cacheKey) {
+        if let data = UserDefaults.standard.data(forKey: userDefaultsCacheKey(for: style)) {
             cacheSize = data.count
         }
 
@@ -266,13 +282,19 @@ struct GeminiService {
     // MARK: - Private API Methods
 
     /// Queries the Gemini API for folder matches (no caching)
-    private static func queryAPI(folderNames: [String], apiKey: String, learningExamples: [(folder: String, symbol: String)]? = nil, contentAnalysis: [FolderContentAnalyzer.ContentAnalysis]? = nil) async throws -> [String: MatchResult] {
+    private static func queryAPI(folderNames: [String], apiKey: String, style: IconStyle = .sfSymbol, learningExamples: [(folder: String, symbol: String)]? = nil, contentAnalysis: [FolderContentAnalyzer.ContentAnalysis]? = nil) async throws -> [String: MatchResult] {
         let endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=\(apiKey)"
         guard let url = URL(string: endpoint) else {
             throw GeminiError.invalidURL
         }
 
-        let prompt = buildPrompt(folderNames: folderNames, learningExamples: learningExamples, contentAnalysis: contentAnalysis)
+        let prompt: String
+        switch style {
+        case .sfSymbol:
+            prompt = buildPrompt(folderNames: folderNames, learningExamples: learningExamples, contentAnalysis: contentAnalysis)
+        case .emoji:
+            prompt = buildEmojiPrompt(folderNames: folderNames, learningExamples: learningExamples, contentAnalysis: contentAnalysis)
+        }
         let requestBody = GeminiRequest(
             contents: [
                 GeminiRequest.Content(
@@ -420,6 +442,84 @@ struct GeminiService {
         [{"folder": "Music", "symbol": "music.note", "confidence": 1.0}, {"folder": "Photos", "symbol": "camera.fill", "confidence": 0.95}]
 
         If you cannot find a good match (confidence < 0.6), use "folder.fill" with confidence 0.5.
+        """
+
+        return prompt
+    }
+
+    private static func buildEmojiPrompt(folderNames: [String], learningExamples: [(folder: String, symbol: String)]? = nil, contentAnalysis: [FolderContentAnalyzer.ContentAnalysis]? = nil) -> String {
+        let list = folderNames.map { "\"\($0)\"" }.joined(separator: ", ")
+
+        var prompt = """
+        You are an expert at matching folder names to the single most fitting emoji. Your goal is to pick a visually distinctive emoji that immediately conveys what's in the folder.
+
+        FOLDER NAMES: [\(list)]
+
+        """
+
+        if let analyses = contentAnalysis, !analyses.isEmpty {
+            prompt += """
+            FOLDER CONTENT CONTEXT (use this to improve matching accuracy):
+            """
+            for analysis in analyses {
+                prompt += "\n- '\(analysis.folderName)': \(analysis.contextDescription)"
+            }
+            prompt += "\n\nUse the content context to pick a more accurate emoji.\n\n"
+        }
+
+        if let examples = learningExamples, !examples.isEmpty {
+            prompt += """
+            USER PREFERENCES (learn from these examples - the user explicitly chose these):
+            """
+            for (folder, symbol) in examples {
+                prompt += "\n- '\(folder)' → '\(symbol)'"
+            }
+            prompt += "\n\nWhen similar folder names appear, strongly prefer emoji that align with these examples.\n\n"
+        }
+
+        prompt += """
+        GUIDELINES:
+        1. Return EXACTLY ONE emoji per folder, as a single Unicode emoji character (with variation selector if needed).
+        2. Prefer concrete, recognizable emoji over abstract ones (🎵 over 🎼 for "music").
+        3. Match semantic meaning, not just literal words (e.g. "finances" → 💰, not 📁).
+        4. Use the most common, visually distinctive emoji even at small sizes.
+        5. NEVER return SF Symbol names — only Unicode emoji characters.
+
+        CONFIDENCE SCORING:
+        - 1.0: Perfect semantic match (e.g. "Music" → 🎵)
+        - 0.9: Strong match (e.g. "Photos" → 📸)
+        - 0.8: Good match (e.g. "Work" → 💼)
+        - 0.7: Acceptable but generic (e.g. "Files" → 📄)
+        - 0.6 or below: Weak match — use 📁
+
+        EXAMPLES:
+        - "photos" → "📸" (confidence: 0.95)
+        - "music" → "🎵" (confidence: 1.0)
+        - "code" → "💻" (confidence: 0.95)
+        - "documents" → "📑" (confidence: 0.9)
+        - "downloads" → "⬇️" (confidence: 0.95)
+        - "videos" → "🎬" (confidence: 1.0)
+        - "finance" → "💰" (confidence: 0.95)
+        - "health" → "❤️" (confidence: 0.9)
+        - "travel" → "✈️" (confidence: 0.95)
+        - "recipes" → "🍽️" (confidence: 0.9)
+        - "books" → "📚" (confidence: 1.0)
+        - "games" → "🎮" (confidence: 1.0)
+        - "design" → "🎨" (confidence: 0.9)
+        - "backup" → "💾" (confidence: 0.9)
+
+        RESPONSE FORMAT:
+        Return ONLY a valid JSON array. No markdown code fences, no explanation, just the JSON array.
+
+        Each object must have exactly three keys:
+        - "folder": the original folder name (string)
+        - "symbol": a single emoji character (string)
+        - "confidence": your confidence score (number between 0 and 1)
+
+        Example:
+        [{"folder": "Music", "symbol": "🎵", "confidence": 1.0}, {"folder": "Photos", "symbol": "📸", "confidence": 0.95}]
+
+        If you cannot find a good match (confidence < 0.6), use "📁" with confidence 0.5.
         """
 
         return prompt

@@ -58,6 +58,31 @@ enum BookmarkStore {
     }
 }
 
+// MARK: - Icon Style (SF Symbol vs. Emoji)
+
+enum IconStyle: String, CaseIterable, Codable {
+    case sfSymbol
+    case emoji
+}
+
+/// Whether the app matches folders to SF Symbols or to emoji. Controls which
+/// mapper (SymbolMapper vs. EmojiMapper) the scan path uses and which prompt
+/// GeminiService sends.
+enum IconStyleStore {
+    private static let key = "iconic.iconStyle.v1"
+
+    static var current: IconStyle {
+        get {
+            guard let raw = UserDefaults.standard.string(forKey: key),
+                  let style = IconStyle(rawValue: raw) else {
+                return .sfSymbol
+            }
+            return style
+        }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: key) }
+    }
+}
+
 // MARK: - Smart Content Detection
 
 enum SmartContentDetectionStore {

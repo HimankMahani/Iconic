@@ -282,6 +282,77 @@ struct SymbolMapper {
         ("recipes", "fork.knife.circle.fill"),
         ("food", "fork.knife"),
         ("cooking", "frying.pan.fill"),
+        ("candy", "birthday.cake.fill"),
+        ("candies", "birthday.cake.fill"),
+        ("sweet", "birthday.cake.fill"),
+        ("sweets", "birthday.cake.fill"),
+        ("dessert", "birthday.cake.fill"),
+        ("desserts", "birthday.cake.fill"),
+        ("cake", "birthday.cake.fill"),
+        ("cakes", "birthday.cake.fill"),
+        ("cookie", "circle.grid.3x3.fill"),
+        ("cookies", "circle.grid.3x3.fill"),
+        ("chocolate", "birthday.cake.fill"),
+        ("cupcake", "birthday.cake.fill"),
+        ("cupcakes", "birthday.cake.fill"),
+        ("treat", "gift.fill"),
+        ("treats", "gift.fill"),
+
+        // Tech abbreviations
+        ("ml", "cube.fill"),
+        ("ai", "brain.head.profile"),
+        ("cv", "photo.stack"),
+        ("nlp", "text.bubble.fill"),
+        ("ds", "chart.bar.fill"),
+        ("dl", "bolt.fill"),
+        ("qa", "checkmark.shield.fill"),
+        ("ux", "macwindow"),
+        ("ui", "macwindow"),
+        ("sdk", "cube.transparent"),
+        ("cli", "terminal.fill"),
+
+        // Data & ML
+        ("dataset", "chart.bar.doc.horizontal"),
+        ("datasets", "chart.bar.doc.horizontal"),
+        ("data", "chart.bar.doc.horizontal"),
+        ("model", "cube.transparent.fill"),
+        ("models", "cube.transparent.fill"),
+        ("checkpoint", "bookmark.fill"),
+        ("checkpoints", "bookmark.fill"),
+        ("experiment", "flask.fill"),
+        ("experiments", "flask.fill"),
+        ("training", "chart.line.uptrend.xyaxis"),
+        ("inference", "bolt.circle.fill"),
+        ("output", "arrow.up.doc.fill"),
+        ("outputs", "arrow.up.doc.fill"),
+        ("embedding", "point.3.connected.trianglepath.dotted"),
+        ("embeddings", "point.3.connected.trianglepath.dotted"),
+        ("weights", "scalemass.fill"),
+        ("tensor", "cube.transparent"),
+        ("tensors", "cube.transparent"),
+        ("notebook", "book.pages"),
+        ("notebooks", "book.pages"),
+        ("jupyter", "book.pages"),
+
+        // Build & dev
+        ("dist", "shippingbox.fill"),
+        ("vendor", "bag.fill"),
+        ("coverage", "chart.pie.fill"),
+        ("benchmark", "speedometer"),
+        ("benchmarks", "speedometer"),
+        ("artifact", "shippingbox.fill"),
+        ("artifacts", "shippingbox.fill"),
+        ("release", "tag.fill"),
+        ("releases", "tag.fill"),
+        ("staging", "tray.2.fill"),
+        ("production", "checkmark.seal.fill"),
+        ("infra", "server.rack"),
+        ("infrastructure", "server.rack"),
+        ("deploy", "arrow.up.forward.app.fill"),
+        ("deployment", "arrow.up.forward.app.fill"),
+        ("docker", "shippingbox.fill"),
+        ("kubernetes", "shippingbox.and.arrow.backward.fill"),
+        ("k8s", "shippingbox.and.arrow.backward.fill"),
 
         // Creative
         ("design", "paintpalette.fill"),
@@ -407,42 +478,100 @@ struct SymbolMapper {
         return dict
     }()
 
-    /// Resolve a folder name to an SF Symbol.
-    /// Custom mappings take priority, then exact word match, substring,
-    /// and finally fuzzy similarity. Returns `fallbackSymbol` if nothing matches.
+    /// Resolve a folder name to an SF Symbol. Discards confidence — use
+    /// `symbolWithConfidence(for:customMappings:)` if the caller needs to know
+    /// whether to fall back to AI for low-confidence local matches.
     static func symbol(for folderName: String, customMappings: [String: String] = [:]) -> String {
+        return symbolWithConfidence(for: folderName, customMappings: customMappings).symbol
+    }
+
+    /// Result of a local match attempt.
+    struct LocalMatch {
+        let symbol: String
+        /// Confidence in the match. Custom mappings + exact dictionary hits are
+        /// 1.0; tag search returns its own score; fuzzy is the Levenshtein ratio;
+        /// fallback (`folder.fill`) is 0.0.
+        let confidence: Double
+        /// Where the match came from — useful for telemetry and AI fallback decisions.
+        let source: Source
+
+        enum Source {
+            case customMapping
+            case builtInDictionary
+            case tagSearch
+            case substring
+            case fuzzy
+            case fallback
+        }
+    }
+
+    /// Resolve a folder name to an SF Symbol AND report how confident we are.
+    /// Callers (IconicViewModel, BackgroundFolderMonitor) use the confidence to
+    /// decide whether to ask Gemini for a better answer.
+    static func symbolWithConfidence(for folderName: String,
+                                     customMappings: [String: String] = [:]) -> LocalMatch {
         let normalized = folderName.lowercased()
         let words = tokenize(normalized)
 
         // 1. Custom: exact full-name match.
-        if let s = customMappings[normalized] { return s }
+        if let s = customMappings[normalized] {
+            return LocalMatch(symbol: s, confidence: 1.0, source: .customMapping)
+        }
         // 2. Custom: any token match.
         for w in words {
-            if let s = customMappings[w] { return s }
+            if let s = customMappings[w] {
+                return LocalMatch(symbol: s, confidence: 1.0, source: .customMapping)
+            }
         }
         // 3. Built-in: exact full-name match.
-        if let s = lookup[normalized] { return s }
+        if let s = lookup[normalized] {
+            return LocalMatch(symbol: s, confidence: 1.0, source: .builtInDictionary)
+        }
         // 4. Built-in: any token match.
         for w in words {
-            if let s = lookup[w] { return s }
+            if let s = lookup[w] {
+                return LocalMatch(symbol: s, confidence: 0.95, source: .builtInDictionary)
+            }
         }
-        // 5. Substring match (handles "photographs" → "photo", "myMusic" → "music").
+        // 5. Tag-based search over Apple's SF Symbols metadata (~3000 symbols).
+        //    This is the big upgrade: it lets us find symbols by their search
+        //    tags AND by name components, not just our curated dictionary.
+        if let tagResult = SymbolSearchEngine.search(folderName: folderName) {
+            return LocalMatch(
+                symbol: tagResult.symbol,
+                confidence: tagResult.confidence,
+                source: .tagSearch
+            )
+        }
+        // 6. Substring match (handles "photographs" → "photo", "myMusic" → "music").
         for (key, symbol) in lookup where key.count >= 3 && normalized.contains(key) {
-            return symbol
+            return LocalMatch(symbol: symbol, confidence: 0.75, source: .substring)
         }
-        // 6. Fuzzy: find the closest keyword for any token (Jaro-Winkler-ish via Levenshtein ratio).
+        // 7. Fuzzy: find the closest keyword for any token.
+        //    Tuning: threshold relaxed to 0.72 for 5+ char tokens (catches
+        //    "node_modules" → "modules"), length-aware penalty so we prefer
+        //    keys close in length to the token, and a first-token boost so
+        //    "archive_old" prioritizes "archive" over "old".
         var bestSymbol: String?
-        var bestScore: Double = 0.78  // threshold; below this we give up
-        for w in words where w.count >= 4 {
+        var bestScore: Double = 0.71
+        for (index, w) in words.enumerated() where w.count >= 4 {
+            let positionBoost: Double = index == 0 ? 0.06 : 0.0
+            let threshold: Double = w.count >= 5 ? 0.72 : 0.78
             for (key, symbol) in lookup where abs(key.count - w.count) <= 3 {
-                let score = similarity(w, key)
-                if score > bestScore {
-                    bestScore = score
+                let rawScore = similarity(w, key)
+                guard rawScore >= threshold else { continue }
+                let lengthPenalty = Double(abs(key.count - w.count)) / Double(max(key.count, w.count))
+                let adjusted = rawScore - (lengthPenalty * 0.10) + positionBoost
+                if adjusted > bestScore {
+                    bestScore = adjusted
                     bestSymbol = symbol
                 }
             }
         }
-        return bestSymbol ?? fallbackSymbol
+        if let bestSymbol = bestSymbol {
+            return LocalMatch(symbol: bestSymbol, confidence: bestScore, source: .fuzzy)
+        }
+        return LocalMatch(symbol: fallbackSymbol, confidence: 0.0, source: .fallback)
     }
 
     // MARK: - Helpers
@@ -467,7 +596,42 @@ struct SymbolMapper {
             }
         }
         if !current.isEmpty { tokens.append(current.lowercased()) }
-        return tokens
+        return filterNoiseTokens(tokens)
+    }
+
+    /// Drop version/state suffix tokens that almost never carry semantic meaning,
+    /// so names like `build-2024`, `data_v2`, `archive_old` match `build`, `data`, `archive`.
+    /// Only filters when there is at least one non-noise token remaining.
+    private static func filterNoiseTokens(_ tokens: [String]) -> [String] {
+        let noise: Set<String> = [
+            "old", "new", "backup", "bak", "tmp", "temp",
+            "copy", "final", "draft", "wip"
+        ]
+        let versionPattern = /^v\d+$/
+        let yearPattern = /^(19|20)\d{2}$/
+        let pureDigitPattern = /^\d+$/
+
+        let filtered = tokens.filter { token in
+            if noise.contains(token) { return false }
+            if (try? versionPattern.wholeMatch(in: token)) != nil { return false }
+            if (try? yearPattern.wholeMatch(in: token)) != nil { return false }
+            if (try? pureDigitPattern.wholeMatch(in: token)) != nil { return false }
+            return true
+        }
+
+        // Never strip everything — if a name is entirely "noise", keep the original tokens.
+        return filtered.isEmpty ? tokens : filtered
+    }
+
+    /// Public tokenizer for use by `SymbolSearchEngine`. Mirrors what we use
+    /// internally so search and matching see the same view of the folder name.
+    static func publicTokenize(_ s: String) -> [String] {
+        return tokenize(s.lowercased())
+    }
+
+    /// Public similarity for use by `SymbolSearchEngine`.
+    static func publicSimilarity(_ a: String, _ b: String) -> Double {
+        return similarity(a, b)
     }
 
     /// Normalized Levenshtein similarity in [0,1].

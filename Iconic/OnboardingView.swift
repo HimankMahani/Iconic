@@ -12,6 +12,7 @@ struct OnboardingView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var settingsVM = SettingsViewModel()
     @State private var selectedMode: MatchingMode = .local
+    @State private var selectedStyle: IconStyle = IconStyleStore.current
 
     enum MatchingMode {
         case ai, local
@@ -76,6 +77,37 @@ struct OnboardingView: View {
 
             VStack(alignment: .leading, spacing: 16) {
                 VStack(alignment: .leading, spacing: 4) {
+                    Text("Icon Style")
+                        .font(.headline)
+                    Text("Pick how folder icons should look. You can change this later.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                HStack(spacing: 12) {
+                    styleOption(
+                        style: .sfSymbol,
+                        title: "SF Symbols",
+                        description: "Apple's clean monochrome icons. Adopts your color choices.",
+                        previewSymbol: "music.note",
+                        useEmojiPreview: false
+                    )
+
+                    styleOption(
+                        style: .emoji,
+                        title: "Emoji",
+                        description: "Familiar full-color emoji. Lots of variety, no color picking needed.",
+                        previewSymbol: "🎵",
+                        useEmojiPreview: true
+                    )
+                }
+            }
+            .padding(16)
+            .background(Color.gray.opacity(0.1))
+            .cornerRadius(10)
+
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text("Get Started")
                         .font(.headline)
                     Text("Recommended: Start with Local Matching - works offline, no setup needed")
@@ -127,6 +159,7 @@ struct OnboardingView: View {
                     } else {
                         settingsVM.toggleAI(false)
                     }
+                    IconStyleStore.current = selectedStyle
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
@@ -134,7 +167,7 @@ struct OnboardingView: View {
             }
         }
         .padding(30)
-        .frame(width: 540, height: selectedMode == .ai ? 880 : 720)
+        .frame(width: 540, height: selectedMode == .ai ? 1020 : 860)
         .animation(.easeInOut(duration: 0.2), value: selectedMode)
     }
 
@@ -171,6 +204,55 @@ struct OnboardingView: View {
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
                     .stroke(selectedMode == mode ? Color.accentColor : Color.gray.opacity(0.3), lineWidth: selectedMode == mode ? 2 : 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func styleOption(style: IconStyle,
+                             title: String,
+                             description: String,
+                             previewSymbol: String,
+                             useEmojiPreview: Bool) -> some View {
+        Button {
+            selectedStyle = style
+        } label: {
+            VStack(spacing: 8) {
+                ZStack {
+                    Image(systemName: "folder.fill")
+                        .font(.system(size: 40))
+                        .foregroundStyle(.blue)
+                    if useEmojiPreview {
+                        Text(previewSymbol)
+                            .font(.system(size: 22))
+                            .offset(y: 2)
+                    } else {
+                        Image(systemName: previewSymbol)
+                            .font(.system(size: 16))
+                            .foregroundStyle(.white)
+                            .offset(y: 4)
+                    }
+                }
+
+                Text(title)
+                    .font(.body)
+                    .fontWeight(.medium)
+                    .foregroundStyle(.primary)
+
+                Text(description)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(12)
+            .background(selectedStyle == style ? Color.accentColor.opacity(0.1) : Color.clear)
+            .cornerRadius(8)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(selectedStyle == style ? Color.accentColor : Color.gray.opacity(0.3),
+                            lineWidth: selectedStyle == style ? 2 : 1)
             )
         }
         .buttonStyle(.plain)

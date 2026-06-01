@@ -229,17 +229,77 @@ struct IconRenderer {
                 continue // Max 3 layers
             }
 
-            drawSymbol(
-                named: symbolName,
-                color: color,
-                iconSize: iconSize,
-                opacity: layerOpacity,
-                scale: scale * Double(layerScale),
-                offsetY: offsetY,
-                offsetX: Double(layerOffsetX),
-                gradientEnd: gradientEnd
-            )
+            if symbolName.isEmojiGlyph {
+                drawEmojiGlyph(
+                    emoji: symbolName,
+                    iconSize: iconSize,
+                    opacity: layerOpacity,
+                    scale: scale * Double(layerScale),
+                    offsetY: offsetY,
+                    offsetX: Double(layerOffsetX)
+                )
+            } else {
+                drawSymbol(
+                    named: symbolName,
+                    color: color,
+                    iconSize: iconSize,
+                    opacity: layerOpacity,
+                    scale: scale * Double(layerScale),
+                    offsetY: offsetY,
+                    offsetX: Double(layerOffsetX),
+                    gradientEnd: gradientEnd
+                )
+            }
         }
+    }
+
+    /// Draws a color emoji glyph centered on the folder face. Mirrors
+    /// `drawSymbol`'s positioning so swapping between SF Symbol and emoji
+    /// styles produces visually-aligned icons. Color emojis carry their own
+    /// hues, so the `color` tint argument is intentionally ignored here.
+    private static func drawEmojiGlyph(
+        emoji: String,
+        iconSize: NSSize,
+        opacity: Double,
+        scale: Double,
+        offsetY: Double,
+        offsetX: Double = 0
+    ) {
+        // 0.55 gives emoji about the same visual weight on the folder face as
+        // an SF Symbol at 0.42 — emoji glyphs paint to a smaller fraction of
+        // their box than SF Symbols at the same point size.
+        let pointSize = iconSize.width * 0.55 * CGFloat(scale)
+        let font = NSFont(name: "Apple Color Emoji", size: pointSize)
+            ?? NSFont.systemFont(ofSize: pointSize)
+
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .paragraphStyle: paragraph
+        ]
+
+        let str = NSAttributedString(string: emoji, attributes: attrs)
+        let textSize = str.size()
+
+        let centerY = iconSize.height * (0.42 + CGFloat(offsetY) * 0.20)
+        let centerX = iconSize.width / 2.0 + CGFloat(offsetX)
+        let rect = NSRect(
+            x: centerX - textSize.width / 2.0,
+            // Apple Color Emoji sits a touch above its baseline; nudge down so
+            // it visually centers in the rect like an SF Symbol does.
+            y: centerY - textSize.height / 2.0 - textSize.height * 0.08,
+            width: textSize.width,
+            height: textSize.height
+        )
+
+        NSGraphicsContext.current?.saveGraphicsState()
+        defer { NSGraphicsContext.current?.restoreGraphicsState() }
+        // Color emoji ignore .foregroundColor; control transparency at the
+        // context level so opacity still has an effect.
+        NSGraphicsContext.current?.cgContext.setAlpha(CGFloat(opacity))
+        str.draw(in: rect)
     }
 
     private static func drawSymbol(

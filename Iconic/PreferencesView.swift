@@ -26,6 +26,7 @@ struct PreferencesView: View {
     @State private var backgroundMonitoringEnabled: Bool = BackgroundMonitoringStore.isEnabled
     @State private var notificationsEnabled: Bool = BackgroundMonitoringStore.notificationsEnabled
     @State private var menuBarEnabled: Bool = false
+    @State private var monitoredLocations: [URL] = BackgroundMonitoringStore.monitoredLocations
     @State private var aiContentAnalysisEnabled: Bool = AIContentAnalysisStore.isEnabled
 
     @State private var settingsSearchText: String = ""
@@ -199,6 +200,7 @@ struct PreferencesView: View {
             backgroundMonitoringEnabled = BackgroundMonitoringStore.isEnabled
             notificationsEnabled = BackgroundMonitoringStore.notificationsEnabled
             menuBarEnabled = menuBarManager.isMenuBarMode
+            monitoredLocations = BackgroundMonitoringStore.monitoredLocations
             aiContentAnalysisEnabled = AIContentAnalysisStore.isEnabled
         }
     }
@@ -386,32 +388,13 @@ struct PreferencesView: View {
                 Toggle("Monitor folders for new subfolders", isOn: $backgroundMonitoringEnabled)
                     .onChange(of: backgroundMonitoringEnabled) { _, newValue in
                         BackgroundMonitoringStore.setEnabled(newValue)
-                        if newValue {
-                            NSApp.sendAction(#selector(AppDelegate.toggleBackgroundMonitoring), to: nil, from: nil)
-                        }
+                        NSApp.sendAction(#selector(AppDelegate.syncBackgroundMonitoring), to: nil, from: nil)
                     }
 
-                Text("Automatically detect new folders in monitored locations and apply icons based on your rules.")
+                Text("Automatically detect new folders in monitored locations and apply icons. Uses your rules first, then AI, smart content detection, and the built-in dictionary.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.leading, 20)
-
-                if backgroundMonitoringEnabled && rulesStore.rules.filter({ $0.autoApply }).isEmpty {
-                    HStack(spacing: 6) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange)
-                            .font(.caption)
-                        VStack(alignment: .leading) {
-                            Text("No auto-apply rules configured")
-                                .font(.caption)
-                                .foregroundStyle(.orange)
-                            Text("Create rules with 'Auto-Apply' enabled in the Rules tab for monitoring to work")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .padding(.leading, 20)
-                }
 
                 if backgroundMonitoringEnabled {
                     VStack(alignment: .leading, spacing: 8) {
@@ -419,7 +402,7 @@ struct PreferencesView: View {
                             .font(.subheadline)
                             .fontWeight(.medium)
 
-                        ForEach(BackgroundMonitoringStore.monitoredLocations, id: \.path) { location in
+                        ForEach(monitoredLocations, id: \.path) { location in
                             HStack {
                                 Image(systemName: "folder")
                                     .foregroundStyle(.secondary)
@@ -430,6 +413,8 @@ struct PreferencesView: View {
                                 Spacer()
                                 Button {
                                     BackgroundMonitoringStore.removeLocation(location)
+                                    monitoredLocations = BackgroundMonitoringStore.monitoredLocations
+                                    NotificationCenter.default.post(name: .iconicMonitoredLocationsChanged, object: nil)
                                 } label: {
                                     Image(systemName: "minus.circle.fill")
                                         .foregroundStyle(.red)
@@ -450,6 +435,8 @@ struct PreferencesView: View {
                             panel.prompt = "Add Location"
                             if panel.runModal() == .OK, let url = panel.url {
                                 BackgroundMonitoringStore.addLocation(url)
+                                monitoredLocations = BackgroundMonitoringStore.monitoredLocations
+                                NotificationCenter.default.post(name: .iconicMonitoredLocationsChanged, object: nil)
                             }
                         }
                         .controlSize(.small)
@@ -489,7 +476,7 @@ struct PreferencesView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "info.circle")
                         .foregroundStyle(.blue)
-                    Text("Background monitoring only works with auto-apply rules. Create rules in the Rules tab and enable \"Auto-Apply\".")
+                    Text("New folders are matched using your rules first, then AI (if enabled), smart content detection, and the built-in dictionary.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -504,6 +491,35 @@ struct PreferencesView: View {
 
     private var appearanceTab: some View {
         VStack(alignment: .leading, spacing: 16) {
+            Text("Icon Style")
+                .font(.headline)
+            Text("Pick how folder icons should look. Affects new scans immediately.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Picker("Style", selection: Binding(
+                get: { IconStyleStore.current },
+                set: { newStyle in
+                    IconStyleStore.current = newStyle
+                    if let root = vm.rootURL {
+                        Task { await vm.scan(root) }
+                    }
+                }
+            )) {
+                Text("SF Symbols").tag(IconStyle.sfSymbol)
+                Text("Emoji").tag(IconStyle.emoji)
+            }
+            .pickerStyle(.segmented)
+            .frame(maxWidth: 320)
+
+            Text(IconStyleStore.current == .emoji
+                ? "Emoji icons use their built-in colors, so the color settings below don't apply."
+                : "SF Symbols adopt the color settings below.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Divider()
+
             Text("Symbol Colors")
                 .font(.headline)
             Text("Customize how colors are applied to folder icons.")

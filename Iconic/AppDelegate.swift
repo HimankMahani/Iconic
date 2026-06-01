@@ -85,6 +85,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         menuBarManager.updateMonitoringStatus(newState)
     }
 
+    /// Start or stop the monitor to match the current store state, without flipping it.
+    /// Use this when the store has already been updated (e.g. by a Toggle binding).
+    @objc func syncBackgroundMonitoring() {
+        let enabled = BackgroundMonitoringStore.isEnabled
+        if enabled {
+            startBackgroundMonitoring()
+        } else {
+            stopBackgroundMonitoring()
+        }
+        menuBarManager.updateMonitoringStatus(enabled)
+    }
+
     @objc func quitApp() {
         NSApplication.shared.terminate(nil)
     }

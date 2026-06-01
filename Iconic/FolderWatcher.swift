@@ -7,8 +7,11 @@
 
 import Foundation
 import AppKit
+import os.log
 
 final class FolderWatcher {
+    private static let log = OSLog(subsystem: "com.app.Iconic", category: "FolderWatcher")
+
     private var eventStream: FSEventStreamRef?
     private var callback: ((URL) -> Void)?
     private var watchedURL: URL?
@@ -22,16 +25,20 @@ final class FolderWatcher {
     func start(watching url: URL, callback: @escaping (URL) -> Void) {
         stop()
 
-        self.watchedURL = url
+        // Resolve symlinks so the path we hold matches what FSEvents reports.
+        // Without this, locations like `/tmp` or `/var` (symlinks to /private/...)
+        // never match incoming event paths and the watcher silently does nothing.
+        let resolvedURL = URL(fileURLWithPath: url.path).resolvingSymlinksInPath()
+
+        self.watchedURL = resolvedURL
         self.callback = callback
 
-        // Build initial snapshot of existing subfolders
-        queue.async { [weak self] in
-            guard let self = self else { return }
-            self.knownSubfolders = self.scanSubfolders(at: url)
-        }
+        // Build the initial snapshot SYNCHRONOUSLY before starting the stream.
+        // A previous async dispatch left a race window where events could fire
+        // against an empty `knownSubfolders` set, causing pre-existing folders
+        // to be reported as new.
+        self.knownSubfolders = scanSubfolders(at: resolvedURL)
 
-        // Create FSEventStream
         var context = FSEventStreamContext(
             version: 0,
             info: Unmanaged.passUnretained(self).toOpaque(),
@@ -40,8 +47,15 @@ final class FolderWatcher {
             copyDescription: nil
         )
 
-        let pathsToWatch = [url.path] as CFArray
-        let flags = UInt32(kFSEventStreamCreateFlagUseCFTypes | kFSEventStreamCreateFlagFileEvents)
+        let pathsToWatch = [resolvedURL.path] as CFArray
+        // NoDefer makes the first event in a quiet period fire immediately
+        // (instead of waiting the full latency), which matters for the common
+        // case where the user creates a single folder.
+        let flags = UInt32(
+            kFSEventStreamCreateFlagUseCFTypes
+            | kFSEventStreamCreateFlagFileEvents
+            | kFSEventStreamCreateFlagNoDefer
+        )
 
         guard let stream = FSEventStreamCreate(
             nil,
@@ -53,9 +67,10 @@ final class FolderWatcher {
             &context,
             pathsToWatch,
             FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
-            0.5, // latency in seconds
+            0.5,
             flags
         ) else {
+            os_log("FSEventStreamCreate failed for %{public}@", log: Self.log, type: .error, resolvedURL.path)
             return
         }
 
@@ -63,6 +78,9 @@ final class FolderWatcher {
 
         FSEventStreamSetDispatchQueue(stream, queue)
         FSEventStreamStart(stream)
+
+        os_log("Watching %{public}@ (%{public}d existing subfolders)",
+               log: Self.log, type: .info, resolvedURL.path, knownSubfolders.count)
     }
 
     /// Stop watching for folder changes.
@@ -79,8 +97,11 @@ final class FolderWatcher {
         knownSubfolders.removeAll()
     }
 
-    private func handleEvents(numEvents: Int, eventPaths: UnsafeMutableRawPointer, eventFlags: UnsafePointer<FSEventStreamEventFlags>) {
+    private func handleEvents(numEvents: Int,
+                              eventPaths: UnsafeMutableRawPointer,
+                              eventFlags: UnsafePointer<FSEventStreamEventFlags>) {
         guard let watchedURL = watchedURL else { return }
+        let watchedPath = watchedURL.path
 
         let paths = Unmanaged<CFArray>.fromOpaque(eventPaths).takeUnretainedValue() as! [String]
 
@@ -88,35 +109,62 @@ final class FolderWatcher {
             let path = paths[i]
             let flags = eventFlags[i]
 
-            // Check if this is a directory creation or modification
-            let isDirectory = (flags & UInt32(kFSEventStreamEventFlagItemIsDir)) != 0
-            let isCreated = (flags & UInt32(kFSEventStreamEventFlagItemCreated)) != 0
+            // Kernel asks us to rescan — happens under burst load. Without
+            // handling this, folders created during the burst are dropped.
+            if (flags & UInt32(kFSEventStreamEventFlagMustScanSubDirs)) != 0 {
+                handleMustScan()
+                continue
+            }
 
+            let isDirectory = (flags & UInt32(kFSEventStreamEventFlagItemIsDir)) != 0
             guard isDirectory else { continue }
 
-            let url = URL(fileURLWithPath: path)
+            // Resolve symlinks on the event path too, then take the canonical
+            // form so both sides of the parent equality check are normalized.
+            let resolved = URL(fileURLWithPath: path).resolvingSymlinksInPath()
+            let folderPath = resolved.path
 
-            // Only process direct children of the watched folder
-            guard url.deletingLastPathComponent().path == watchedURL.path else { continue }
+            // Only direct children of the watched folder.
+            guard resolved.deletingLastPathComponent().path == watchedPath else { continue }
 
-            // Check if this is a new folder we haven't seen before
-            let folderPath = url.path
-            if isCreated || !knownSubfolders.contains(folderPath) {
+            // Confirm it still exists (rapid create+delete shows up otherwise).
+            var isDir: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: folderPath, isDirectory: &isDir),
+                  isDir.boolValue else { continue }
+
+            // Use set membership as the sole source of truth for "new". The
+            // Created flag is unreliable: FSEvents coalesces flags across
+            // multiple events for the same path, so it can persist after the
+            // first delivery. Combining it with `||` re-fires the callback
+            // and re-applies the icon every time the folder is touched.
+            if !knownSubfolders.contains(folderPath) {
                 knownSubfolders.insert(folderPath)
-
-                // Verify it still exists and is a directory
-                var isDir: ObjCBool = false
-                guard FileManager.default.fileExists(atPath: folderPath, isDirectory: &isDir),
-                      isDir.boolValue else { continue }
-
-                // Call the callback on the main queue
-                if let callback = callback {
-                    DispatchQueue.main.async {
-                        callback(url)
-                    }
-                }
+                fire(url: resolved)
             }
         }
+    }
+
+    /// Re-snapshot the watched directory and emit any folders we hadn't seen.
+    /// Triggered by `kFSEventStreamEventFlagMustScanSubDirs`.
+    private func handleMustScan() {
+        guard let watchedURL = watchedURL else { return }
+        let current = scanSubfolders(at: watchedURL)
+        let newFolders = current.subtracting(knownSubfolders)
+        knownSubfolders = current
+
+        if !newFolders.isEmpty {
+            os_log("MustScan rescue: %{public}d new folder(s) recovered",
+                   log: Self.log, type: .info, newFolders.count)
+        }
+
+        for folderPath in newFolders {
+            fire(url: URL(fileURLWithPath: folderPath))
+        }
+    }
+
+    private func fire(url: URL) {
+        guard let callback = callback else { return }
+        DispatchQueue.main.async { callback(url) }
     }
 
     private func scanSubfolders(at url: URL) -> Set<String> {
@@ -133,7 +181,8 @@ final class FolderWatcher {
         for case let fileURL as URL in enumerator {
             if let resourceValues = try? fileURL.resourceValues(forKeys: [.isDirectoryKey]),
                resourceValues.isDirectory == true {
-                result.insert(fileURL.path)
+                // Store resolved path so equality checks line up with event paths.
+                result.insert(fileURL.resolvingSymlinksInPath().path)
             }
         }
 

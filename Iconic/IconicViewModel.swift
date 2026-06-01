@@ -52,6 +52,10 @@ enum MatchSource: Equatable {
     case localDictionary
     case fuzzyMatch
     case userEdited
+    /// No reliable symbol/emoji found — the folder stays as the plain system
+    /// folder and is skipped during apply. Used for AI failures, low confidence
+    /// matches, and local fallback hits.
+    case unassigned
 
     var displayName: String {
         switch self {
@@ -62,6 +66,7 @@ enum MatchSource: Equatable {
         case .localDictionary: return "Dictionary"
         case .fuzzyMatch: return "Fuzzy Match"
         case .userEdited: return "Manual"
+        case .unassigned: return "Unassigned"
         }
     }
 
@@ -74,6 +79,7 @@ enum MatchSource: Equatable {
         case .localDictionary: return "book.closed"
         case .fuzzyMatch: return "textformat.abc"
         case .userEdited: return "pencil"
+        case .unassigned: return "questionmark.circle"
         }
     }
 
@@ -86,6 +92,7 @@ enum MatchSource: Equatable {
         case .localDictionary: return .gray
         case .fuzzyMatch: return .gray
         case .userEdited: return .green
+        case .unassigned: return .secondary
         }
     }
 }
@@ -107,9 +114,17 @@ final class FolderItem: ObservableObject, Identifiable {
     @Published var symbolGradientEnd: NSColor?
     @Published var matchSource: MatchSource = .localDictionary
 
-    /// Backward compatibility: returns the first symbol name or default
+    /// True when the matcher gave up on this folder. Unassigned items keep
+    /// the plain system folder icon, never get a tint or symbol overlay, and
+    /// are skipped during apply so the user can review them manually.
+    var isUnassigned: Bool {
+        matchSource == .unassigned
+    }
+
+    /// Backward compatibility: returns the first symbol name. Empty for
+    /// unassigned items so the renderer falls back to the plain system folder.
     var symbolName: String {
-        symbolNames.first ?? "folder.fill"
+        symbolNames.first ?? ""
     }
 
     var displayName: String { url.lastPathComponent }
@@ -138,6 +153,15 @@ final class FolderItem: ObservableObject, Identifiable {
         self.symbolNames = symbolNames
         self.symbolColor = symbolColor
         self.folderColor = folderColor
+    }
+
+    /// Creates an unassigned placeholder: no symbol, no colors, no match
+    /// source badge to act on. Use this when the matcher can't pick a
+    /// confident symbol for a folder.
+    static func unassigned(url: URL) -> FolderItem {
+        let item = FolderItem(url: url, symbolName: "", symbolColor: nil, folderColor: nil)
+        item.matchSource = .unassigned
+        return item
     }
 }
 
@@ -277,8 +301,9 @@ final class IconicViewModel: ObservableObject {
         case .changed:
             result = result.filter { $0.hasChanges }
         case .unmapped:
-            // Generic fallback symbols from IconRenderer.resolveSymbolName
-            result = result.filter { $0.symbolName == "folder" || $0.symbolName == "folder.fill" }
+            // Folders that the matcher couldn't confidently resolve — they
+            // stay as the plain system folder until the user picks a symbol.
+            result = result.filter { $0.isUnassigned }
         }
 
         return result
@@ -677,25 +702,75 @@ final class IconicViewModel: ObservableObject {
     /// Resolves a folder name to a glyph (SF Symbol name OR emoji) using the
     /// local matcher matching the current icon style. Lets the rest of the
     /// scan code branch on style in one place.
-    private static func localGlyph(for name: String, customMappings: [String: String]) -> String {
+    private static func localGlyph(for name: String, customMappings: [String: String]) -> String? {
         switch IconStyleStore.current {
         case .sfSymbol:
-            return SymbolMapper.symbol(for: name, customMappings: customMappings)
+            let match = SymbolMapper.symbolWithConfidence(for: name, customMappings: customMappings)
+            return match.source == .fallback ? nil : match.symbol
         case .emoji:
-            return EmojiMapper.emoji(for: name, customMappings: customMappings)
+            let match = EmojiMapper.emojiWithConfidence(for: name, customMappings: customMappings)
+            return match.source == .fallback ? nil : match.emoji
         }
+    }
+
+    /// True if the glyph returned by the local matcher is a generic folder
+    /// fallback (i.e. not a real match). Used to decide whether to mark the
+    /// folder as unassigned.
+    private static func isFallbackGlyph(_ glyph: String) -> Bool {
+        if glyph.isEmpty { return true }
+        if IconStyleStore.current == .sfSymbol, glyph == "folder" || glyph == "folder.fill" {
+            return true
+        }
+        if IconStyleStore.current == .emoji, glyph == "📁" {
+            return true
+        }
+        return false
+    }
+
+    /// Constructs a matched `FolderItem` from a resolved glyph. If the glyph
+    /// is a generic fallback, the item is returned as unassigned instead.
+    private static func makeItem(
+        url: URL,
+        glyph: String,
+        ruleSymbolColor: NSColor?,
+        ruleFolderColor: NSColor?,
+        source: MatchSource,
+        trackAISuggestion: Bool,
+        aiSymbol: String?
+    ) -> FolderItem {
+        // Suppress rule / smart-detection / custom / AI glyphs that collapse
+        // back to the generic folder/emoji — treat them as unassigned.
+        if isFallbackGlyph(glyph), source != .userEdited {
+            let item = FolderItem.unassigned(url: url)
+            // Honor rule colors even on unassigned items so the folder still
+            // gets the requested tint without a symbol overlay.
+            item.folderColor = ruleFolderColor
+            item.symbolColor = ruleSymbolColor
+            return item
+        }
+        let item = FolderItem(
+            url: url,
+            symbolName: glyph,
+            symbolColor: ruleSymbolColor,
+            folderColor: ruleFolderColor
+        )
+        item.matchSource = source
+        return item
     }
 
     /// Keeps older rule/custom values and smart-detection results from leaking
     /// SF Symbol names into emoji mode, or emoji glyphs into SF Symbol mode.
-    private static func glyphForCurrentStyle(folderName: String, proposedGlyph: String, customMappings: [String: String]) -> String {
-        if isValidAIGlyph(proposedGlyph) {
+    /// Returns nil if the resolved glyph is a generic folder/emoji fallback —
+    /// the caller should treat that as "no real match" and leave the folder
+    /// unassigned.
+    private static func glyphForCurrentStyle(folderName: String, proposedGlyph: String, customMappings: [String: String]) -> String? {
+        if isValidAIGlyph(proposedGlyph), !isFallbackGlyph(proposedGlyph) {
             return proposedGlyph
         }
         return localGlyph(for: folderName, customMappings: customMappings)
     }
 
-    private static func smartDetectionGlyph(for detectedSymbol: String, folderName: String, customMappings: [String: String]) -> String {
+    private static func smartDetectionGlyph(for detectedSymbol: String, folderName: String, customMappings: [String: String]) -> String? {
         guard IconStyleStore.current == .emoji else { return detectedSymbol }
         switch detectedSymbol {
         case "arrow.triangle.branch": return "🌿"
@@ -757,80 +832,88 @@ final class IconicViewModel: ObservableObject {
 
             let newItems: [FolderItem] = urls.map { url in
                 let name = url.lastPathComponent
-                var symbol: String
-                var ruleSymbolColor: NSColor?
-                var ruleFolderColor: NSColor?
-                var wasAISuggestion = false
-                var source: MatchSource = .localDictionary
-                var aiConfidence: Double = 0
 
                 // Highest priority: user-defined rules
-                if let rule = rulesStore?.firstMatch(for: name) {
-                    symbol = Self.glyphForCurrentStyle(folderName: name, proposedGlyph: rule.symbol, customMappings: customMappings)
-                    ruleSymbolColor = rule.symbolColor
-                    ruleFolderColor = rule.folderColor
-                    source = .rule(ruleName: rule.name)
-                } else if SmartContentDetectionStore.isEnabled, let detectedSym = FolderTypeDetector.detectType(at: url) {
-                    symbol = Self.smartDetectionGlyph(for: detectedSym, folderName: name, customMappings: customMappings)
-                    source = .smartDetection(type: Self.smartDetectionTypeDescription(for: detectedSym))
-                } else if let customSym = customMappings[name.lowercased()] {
-                    symbol = Self.glyphForCurrentStyle(folderName: name, proposedGlyph: customSym, customMappings: customMappings)
-                    source = .customMapping
+                if let rule = rulesStore?.firstMatch(for: name),
+                   let glyph = Self.glyphForCurrentStyle(folderName: name, proposedGlyph: rule.symbol, customMappings: customMappings) {
+                    return Self.makeItem(
+                        url: url,
+                        glyph: glyph,
+                        ruleSymbolColor: rule.symbolColor,
+                        ruleFolderColor: rule.folderColor,
+                        source: .rule(ruleName: rule.name),
+                        trackAISuggestion: false,
+                        aiSymbol: nil
+                    )
+                } else if SmartContentDetectionStore.isEnabled, let detectedSym = FolderTypeDetector.detectType(at: url),
+                          let glyph = Self.smartDetectionGlyph(for: detectedSym, folderName: name, customMappings: customMappings) {
+                    return Self.makeItem(
+                        url: url,
+                        glyph: glyph,
+                        ruleSymbolColor: nil,
+                        ruleFolderColor: nil,
+                        source: .smartDetection(type: Self.smartDetectionTypeDescription(for: detectedSym)),
+                        trackAISuggestion: false,
+                        aiSymbol: nil
+                    )
+                } else if let customSym = customMappings[name.lowercased()],
+                          let glyph = Self.glyphForCurrentStyle(folderName: name, proposedGlyph: customSym, customMappings: customMappings) {
+                    return Self.makeItem(
+                        url: url,
+                        glyph: glyph,
+                        ruleSymbolColor: nil,
+                        ruleFolderColor: nil,
+                        source: .customMapping,
+                        trackAISuggestion: false,
+                        aiSymbol: nil
+                    )
                 } else if let matchResult = geminiMatches[name] {
-                    // Use Gemini match if confidence is acceptable (>= 0.6)
-                    if matchResult.confidence >= 0.6 {
-                        // Validate the glyph renders for the current icon style;
-                        // fall back to the local matcher (style-aware) if not.
-                        if Self.isValidAIGlyph(matchResult.symbol) {
-                            symbol = matchResult.symbol
-                            wasAISuggestion = true
-                            aiConfidence = matchResult.confidence
-                            source = .aiSuggestion(confidence: matchResult.confidence)
-                        } else {
-                            symbol = Self.localGlyph(for: name, customMappings: [:])
-                            source = .localDictionary
-                        }
+                    // Use Gemini match only when the model is confident AND the
+                    // glyph is renderable for the current style. Below 0.7 we
+                    // treat the folder as unassigned so the user can pick a
+                    // symbol manually instead of getting a generic "folder.fill".
+                    if matchResult.confidence >= 0.7, Self.isValidAIGlyph(matchResult.symbol) {
+                        return Self.makeItem(
+                            url: url,
+                            glyph: matchResult.symbol,
+                            ruleSymbolColor: nil,
+                            ruleFolderColor: nil,
+                            source: .aiSuggestion(confidence: matchResult.confidence),
+                            trackAISuggestion: true,
+                            aiSymbol: matchResult.symbol
+                        )
                     } else {
-                        // Low confidence, use local matcher
-                        symbol = Self.localGlyph(for: name, customMappings: [:])
-                        source = .localDictionary
+                        return FolderItem.unassigned(url: url)
                     }
                 } else {
-                    symbol = Self.localGlyph(for: name, customMappings: [:])
-                    source = .localDictionary
+                    // AI didn't return a result for this folder — leave it
+                    // unassigned rather than papering over with a fallback.
+                    return FolderItem.unassigned(url: url)
                 }
-
-                let item = FolderItem(url: url, symbolName: symbol, symbolColor: ruleSymbolColor, folderColor: ruleFolderColor)
-                item.matchSource = source
-                _ = aiConfidence  // confidence already captured in source
-
-                // Track AI suggestions so we can detect corrections later
-                if wasAISuggestion {
-                    aiSuggestions[item.id] = symbol
-                }
-
-                return item
             }
             items = newItems
 
         } catch let error as GeminiService.GeminiError {
             errorInfo = ErrorInfo(
-                message: error.localizedDescription,
-                suggestion: error.recoverySuggestion,
+                message: "Gemini AI unavailable: \(error.localizedDescription)",
+                suggestion: error.recoverySuggestion ?? "Falling back to local matching.",
                 canRetry: error != .missingAPIKey && error != .invalidAPIKeyFormat,
                 isWarning: true
             )
-            lastError = error.localizedDescription
+            lastError = "Gemini AI unavailable: \(error.localizedDescription). Folders without a confident match will be left unassigned."
+            // The batch call failed entirely — fall back to local matching,
+            // which will mark unassigned folders as such instead of giving
+            // them a generic fallback symbol.
             matchingMode = .local
             await scanWithLocalMatcher(urls: urls, customMappings: customMappings)
         } catch {
             errorInfo = ErrorInfo(
                 message: "AI matching failed: \(error.localizedDescription)",
-                suggestion: "Using local matching instead",
+                suggestion: "Falling back to local matching. Folders without a confident match will be left unassigned.",
                 canRetry: true,
                 isWarning: true
             )
-            lastError = "Gemini AI failed: \(error.localizedDescription). Using local matching."
+            lastError = "Gemini AI failed: \(error.localizedDescription). Folders without a confident match will be left unassigned."
             matchingMode = .local
             await scanWithLocalMatcher(urls: urls, customMappings: customMappings)
         }
@@ -839,30 +922,54 @@ final class IconicViewModel: ObservableObject {
     private func scanWithLocalMatcher(urls: [URL], customMappings: [String: String]) async {
         let newItems: [FolderItem] = urls.map { u in
             let name = u.lastPathComponent
-            var sym: String
-            var ruleSymbolColor: NSColor?
-            var ruleFolderColor: NSColor?
-            var source: MatchSource = .localDictionary
 
             // Highest priority: user-defined rules
-            if let rule = rulesStore?.firstMatch(for: name) {
-                sym = Self.glyphForCurrentStyle(folderName: name, proposedGlyph: rule.symbol, customMappings: customMappings)
-                ruleSymbolColor = rule.symbolColor
-                ruleFolderColor = rule.folderColor
-                source = .rule(ruleName: rule.name)
-            } else if SmartContentDetectionStore.isEnabled, let detectedSym = FolderTypeDetector.detectType(at: u) {
-                sym = Self.smartDetectionGlyph(for: detectedSym, folderName: name, customMappings: customMappings)
-                source = .smartDetection(type: Self.smartDetectionTypeDescription(for: detectedSym))
-            } else if let customSym = customMappings[name.lowercased()] {
-                sym = Self.glyphForCurrentStyle(folderName: name, proposedGlyph: customSym, customMappings: customMappings)
-                source = .customMapping
+            if let rule = rulesStore?.firstMatch(for: name),
+               let glyph = Self.glyphForCurrentStyle(folderName: name, proposedGlyph: rule.symbol, customMappings: customMappings) {
+                return Self.makeItem(
+                    url: u,
+                    glyph: glyph,
+                    ruleSymbolColor: rule.symbolColor,
+                    ruleFolderColor: rule.folderColor,
+                    source: .rule(ruleName: rule.name),
+                    trackAISuggestion: false,
+                    aiSymbol: nil
+                )
+            } else if SmartContentDetectionStore.isEnabled, let detectedSym = FolderTypeDetector.detectType(at: u),
+                      let glyph = Self.smartDetectionGlyph(for: detectedSym, folderName: name, customMappings: customMappings) {
+                return Self.makeItem(
+                    url: u,
+                    glyph: glyph,
+                    ruleSymbolColor: nil,
+                    ruleFolderColor: nil,
+                    source: .smartDetection(type: Self.smartDetectionTypeDescription(for: detectedSym)),
+                    trackAISuggestion: false,
+                    aiSymbol: nil
+                )
+            } else if let customSym = customMappings[name.lowercased()],
+                      let glyph = Self.glyphForCurrentStyle(folderName: name, proposedGlyph: customSym, customMappings: customMappings) {
+                return Self.makeItem(
+                    url: u,
+                    glyph: glyph,
+                    ruleSymbolColor: nil,
+                    ruleFolderColor: nil,
+                    source: .customMapping,
+                    trackAISuggestion: false,
+                    aiSymbol: nil
+                )
+            } else if let glyph = Self.localGlyph(for: name, customMappings: customMappings) {
+                return Self.makeItem(
+                    url: u,
+                    glyph: glyph,
+                    ruleSymbolColor: nil,
+                    ruleFolderColor: nil,
+                    source: .localDictionary,
+                    trackAISuggestion: false,
+                    aiSymbol: nil
+                )
             } else {
-                sym = Self.localGlyph(for: name, customMappings: customMappings)
-                source = .localDictionary
+                return FolderItem.unassigned(url: u)
             }
-            let item = FolderItem(url: u, symbolName: sym, symbolColor: ruleSymbolColor, folderColor: ruleFolderColor)
-            item.matchSource = source
-            return item
         }
         items = newItems
     }
@@ -895,33 +1002,54 @@ final class IconicViewModel: ObservableObject {
             let offsetY: Double
             let gradientEnd: NSColor?
             let customImage: NSImage?
+            let isUnassigned: Bool
         }
-        let pairs = items.map {
+        let pairs = items.map { item in
             RenderPair(
-                id: $0.id,
-                symbol: $0.symbolName,
-                color: $0.symbolColor ?? defaultColor,
-                folderTint: $0.folderColor,
-                path: $0.url.path,
-                opacity: $0.symbolOpacity,
-                scale: $0.symbolScale,
-                offsetY: $0.symbolOffsetY,
-                gradientEnd: $0.symbolGradientEnd,
-                customImage: $0.customImage
+                id: item.id,
+                symbol: item.symbolName,
+                // Unassigned items get the default symbol tint only when the
+                // user has explicitly set a custom color; otherwise we leave
+                // the symbol color nil so the renderer keeps the plain folder.
+                color: item.symbolColor ?? defaultColor,
+                folderTint: item.folderColor,
+                path: item.url.path,
+                opacity: item.symbolOpacity,
+                scale: item.symbolScale,
+                offsetY: item.symbolOffsetY,
+                gradientEnd: item.symbolGradientEnd,
+                customImage: item.customImage,
+                isUnassigned: item.isUnassigned
             )
         }
         let rendered = await Task.detached(priority: .userInitiated) {
             pairs.map { p -> (UUID, NSImage?, NSImage) in
-                let preview = IconRenderer.makeIcon(
-                    symbolNames: [p.symbol],
-                    tint: p.color,
-                    folderTint: p.folderTint,
-                    opacity: p.opacity,
-                    scale: p.scale,
-                    offsetY: p.offsetY,
-                    gradientEnd: p.gradientEnd,
-                    customImage: p.customImage
-                )
+                let preview: NSImage?
+                if p.isUnassigned {
+                    // Unassigned → no symbol, no tint, no folder recolor. The
+                    // row just shows the plain system folder.
+                    preview = IconRenderer.makeIcon(
+                        symbolNames: [],
+                        tint: p.color,
+                        folderTint: nil,
+                        opacity: 0,
+                        scale: 0,
+                        offsetY: 0,
+                        gradientEnd: nil,
+                        customImage: nil
+                    )
+                } else {
+                    preview = IconRenderer.makeIcon(
+                        symbolNames: [p.symbol],
+                        tint: p.color,
+                        folderTint: p.folderTint,
+                        opacity: p.opacity,
+                        scale: p.scale,
+                        offsetY: p.offsetY,
+                        gradientEnd: p.gradientEnd,
+                        customImage: p.customImage
+                    )
+                }
                 let current = NSWorkspace.shared.icon(forFile: p.path)
                 return (p.id, preview, current)
             }
@@ -951,11 +1079,15 @@ final class IconicViewModel: ObservableObject {
             var newSymbol: String?
             var newSource: MatchSource = .localDictionary
             var errorMessage: String?
+            var ruleSymbolColor: NSColor?
+            var ruleFolderColor: NSColor?
 
             // Mirror the scan-time priority: rules → smart detection → custom mappings → AI/local.
             if let rule = rulesStore?.firstMatch(for: name) {
                 newSymbol = Self.glyphForCurrentStyle(folderName: name, proposedGlyph: rule.symbol, customMappings: custom)
                 newSource = .rule(ruleName: rule.name)
+                ruleSymbolColor = rule.symbolColor
+                ruleFolderColor = rule.folderColor
             } else if SmartContentDetectionStore.isEnabled, let detectedSym = FolderTypeDetector.detectType(at: url) {
                 newSymbol = Self.smartDetectionGlyph(for: detectedSym, folderName: name, customMappings: custom)
                 newSource = .smartDetection(type: Self.smartDetectionTypeDescription(for: detectedSym))
@@ -972,7 +1104,7 @@ final class IconicViewModel: ObservableObject {
                         learningExamples: learningExamples,
                         contentAnalysis: nil
                     )
-                    if let match = matches[name], match.confidence >= 0.6, Self.isValidAIGlyph(match.symbol) {
+                    if let match = matches[name], match.confidence >= 0.7, Self.isValidAIGlyph(match.symbol) {
                         newSymbol = match.symbol
                         newSource = .aiSuggestion(confidence: match.confidence)
                     } else {
@@ -987,12 +1119,24 @@ final class IconicViewModel: ObservableObject {
                 newSource = .localDictionary
             }
 
-            if let sym = newSymbol {
+            // If retry produced a real glyph, adopt it. Otherwise mark the
+            // item as unassigned so the row makes the state obvious.
+            if let sym = newSymbol, !Self.isFallbackGlyph(sym) {
                 item.symbolNames = [sym]
                 item.matchSource = newSource
                 item.status = .pending
                 rerenderPreservingMatchSource(item)
-            } else if let msg = errorMessage {
+            } else {
+                let rebuilt = FolderItem.unassigned(url: url)
+                rebuilt.folderColor = ruleFolderColor ?? item.folderColor
+                rebuilt.symbolColor = ruleSymbolColor ?? item.symbolColor
+                rebuilt.status = item.status
+                item.symbolNames = rebuilt.symbolNames
+                item.matchSource = .unassigned
+                item.status = .pending
+                rerenderPreservingMatchSource(item)
+            }
+            if let msg = errorMessage {
                 item.status = .failed(msg)
             }
         }
@@ -1028,8 +1172,16 @@ final class IconicViewModel: ObservableObject {
     /// Use after custom mappings change.
     func refreshSymbol(for item: FolderItem) {
         let custom = mappings.dictionary
-        item.symbolNames = [Self.localGlyph(for: item.url.lastPathComponent, customMappings: custom)]
-        rerender(item)
+        let name = item.url.lastPathComponent
+        if let glyph = Self.localGlyph(for: name, customMappings: custom) {
+            item.symbolNames = [glyph]
+            rerender(item)
+        } else {
+            // No real match → mark unassigned instead of forcing a fallback.
+            item.symbolNames = []
+            item.matchSource = .unassigned
+            rerender(item)
+        }
     }
 
     /// Re-render the preview using the item's current `symbolNames`.
@@ -1055,11 +1207,16 @@ final class IconicViewModel: ObservableObject {
             aiSuggestions.removeValue(forKey: item.id)
         }
 
-        // Mark as user-edited since rerender is called after manual edits.
-        if item.matchSource != .userEdited {
+        // Mark as user-edited since rerender is called after manual edits —
+        // unless the user has explicitly cleared the symbol, in which case
+        // we drop the row back to the unassigned state.
+        if item.symbolNames.isEmpty {
+            item.matchSource = .unassigned
+        } else if item.matchSource != .userEdited {
             item.matchSource = .userEdited
         }
         let syms = item.symbolNames
+        let isUnassigned = item.isUnassigned
         let color = item.symbolColor ?? ColorPreferences.getDefaultColor()
         let folderTint = item.folderColor
         let opacity = item.symbolOpacity
@@ -1068,16 +1225,30 @@ final class IconicViewModel: ObservableObject {
         let gradientEnd = item.symbolGradientEnd
         let customImage = item.customImage
         Task.detached(priority: .userInitiated) {
-            let img = IconRenderer.makeIcon(
-                symbolNames: syms,
-                tint: color,
-                folderTint: folderTint,
-                opacity: opacity,
-                scale: scale,
-                offsetY: offsetY,
-                gradientEnd: gradientEnd,
-                customImage: customImage
-            )
+            let img: NSImage?
+            if isUnassigned {
+                img = IconRenderer.makeIcon(
+                    symbolNames: [],
+                    tint: color,
+                    folderTint: nil,
+                    opacity: 0,
+                    scale: 0,
+                    offsetY: 0,
+                    gradientEnd: nil,
+                    customImage: nil
+                )
+            } else {
+                img = IconRenderer.makeIcon(
+                    symbolNames: syms,
+                    tint: color,
+                    folderTint: folderTint,
+                    opacity: opacity,
+                    scale: scale,
+                    offsetY: offsetY,
+                    gradientEnd: gradientEnd,
+                    customImage: customImage
+                )
+            }
             await MainActor.run { item.preview = img }
         }
     }
@@ -1090,6 +1261,8 @@ final class IconicViewModel: ObservableObject {
         let colorAssignments = ColorPalette.assignColors(for: folderNames)
 
         for item in items {
+            // Unassigned items stay plain — no folder recolor, no symbol tint.
+            if item.isUnassigned { continue }
             if item.folderColor == nil {
                 item.folderColor = colorAssignments[item.url.lastPathComponent]
             }
@@ -1116,6 +1289,14 @@ final class IconicViewModel: ObservableObject {
     // MARK: - Apply / restore
 
     func apply(_ item: FolderItem) {
+        // Unassigned items have no symbol to apply. Leave the folder alone
+        // (no custom icon gets written) and surface the state in the status
+        // badge so the user knows the click was a no-op.
+        if item.isUnassigned || item.symbolNames.isEmpty {
+            item.status = .pending
+            return
+        }
+
         // Record previous state for undo
         let previousState = IconicUndoManager.FolderState(
             status: item.status,
@@ -1182,8 +1363,29 @@ final class IconicViewModel: ObservableObject {
     }
 
     func applyAll() {
-        let snapshot = batchTargets
-        guard !snapshot.isEmpty else { return }
+        // Drop unassigned items up front — they have no symbol, so applying
+        // would write a plain folder (or nothing) and there's no point
+        // running them through the per-item render path.
+        let original = batchTargets
+        let skipped = original.filter { $0.isUnassigned || $0.symbolNames.isEmpty }.count
+        let snapshot = original.filter { !$0.isUnassigned && !$0.symbolNames.isEmpty }
+        guard !snapshot.isEmpty else {
+            if skipped > 0 {
+                showToast(
+                    "Skipping \(skipped) folder(s) with no symbol match",
+                    icon: "questionmark.circle",
+                    type: .info
+                )
+            }
+            return
+        }
+        if skipped > 0 {
+            showToast(
+                "Skipping \(skipped) folder(s) with no symbol match",
+                icon: "questionmark.circle",
+                type: .info
+            )
+        }
 
         // Surface SIP-protected folders before kicking off the batch so the
         // user knows they'll be skipped (or the whole batch is unworkable).
@@ -1456,35 +1658,67 @@ final class IconicViewModel: ObservableObject {
         let name = url.lastPathComponent
         let custom = mappings.dictionary
 
-        var symbol: String
         var ruleSymbolColor: NSColor?
         var ruleFolderColor: NSColor?
         var shouldAutoApply = false
-        var source: MatchSource = .localDictionary
 
         // Check if any auto-apply rule matches
-        if let rule = rulesStore?.firstMatch(for: name), rule.autoApply {
-            symbol = rule.symbol
+        let item: FolderItem
+        if let rule = rulesStore?.firstMatch(for: name), rule.autoApply,
+           let glyph = Self.glyphForCurrentStyle(folderName: name, proposedGlyph: rule.symbol, customMappings: custom) {
+            item = Self.makeItem(
+                url: url,
+                glyph: glyph,
+                ruleSymbolColor: rule.symbolColor,
+                ruleFolderColor: rule.folderColor,
+                source: .rule(ruleName: rule.name),
+                trackAISuggestion: false,
+                aiSymbol: nil
+            )
             ruleSymbolColor = rule.symbolColor
             ruleFolderColor = rule.folderColor
             shouldAutoApply = true
-            source = .rule(ruleName: rule.name)
-        } else if SmartContentDetectionStore.isEnabled, let detectedSym = FolderTypeDetector.detectType(at: url) {
-            symbol = detectedSym
-            source = .smartDetection(type: Self.smartDetectionTypeDescription(for: detectedSym))
-        } else if let customSym = custom[name.lowercased()] {
-            symbol = customSym
-            source = .customMapping
+        } else if SmartContentDetectionStore.isEnabled, let detectedSym = FolderTypeDetector.detectType(at: url),
+                  let glyph = Self.smartDetectionGlyph(for: detectedSym, folderName: name, customMappings: custom) {
+            item = Self.makeItem(
+                url: url,
+                glyph: glyph,
+                ruleSymbolColor: nil,
+                ruleFolderColor: nil,
+                source: .smartDetection(type: Self.smartDetectionTypeDescription(for: detectedSym)),
+                trackAISuggestion: false,
+                aiSymbol: nil
+            )
+        } else if let customSym = custom[name.lowercased()],
+                  let glyph = Self.glyphForCurrentStyle(folderName: name, proposedGlyph: customSym, customMappings: custom) {
+            item = Self.makeItem(
+                url: url,
+                glyph: glyph,
+                ruleSymbolColor: nil,
+                ruleFolderColor: nil,
+                source: .customMapping,
+                trackAISuggestion: false,
+                aiSymbol: nil
+            )
+        } else if let glyph = Self.localGlyph(for: name, customMappings: custom) {
+            item = Self.makeItem(
+                url: url,
+                glyph: glyph,
+                ruleSymbolColor: nil,
+                ruleFolderColor: nil,
+                source: .localDictionary,
+                trackAISuggestion: false,
+                aiSymbol: nil
+            )
         } else {
-            symbol = Self.localGlyph(for: name, customMappings: custom)
-            source = .localDictionary
+            // No real match for a folder the watcher just spotted — leave it
+            // unassigned so the user can resolve it in-app. We never want to
+            // stamp a generic folder.fill on a brand new folder.
+            item = FolderItem.unassigned(url: url)
         }
 
-        let item = FolderItem(url: url, symbolName: symbol, symbolColor: ruleSymbolColor, folderColor: ruleFolderColor)
-        item.matchSource = source
-
-        // Assign color if enabled
-        if AutoColorStore.isEnabled {
+        // Assign color if enabled — unassigned items stay plain (no folder recolor).
+        if AutoColorStore.isEnabled, !item.isUnassigned {
             let colorAssignments = ColorPalette.assignColors(for: [name])
             if let folderColor = colorAssignments[name] {
                 item.folderColor = folderColor

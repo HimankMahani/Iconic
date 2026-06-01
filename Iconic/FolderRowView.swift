@@ -50,7 +50,13 @@ struct FolderRowView: View {
                     .font(.body)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                glyphLabel(item.symbolName)
+                if !item.symbolName.isEmpty {
+                    glyphLabel(item.symbolName)
+                } else {
+                    Text("No symbol match — folder left as system default")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 matchSourceBadge
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -96,6 +102,10 @@ struct FolderRowView: View {
                 .buttonStyle(.bordered)
             Button("Apply") { onApply() }
                 .buttonStyle(.borderedProminent)
+                .disabled(item.isUnassigned || item.symbolNames.isEmpty)
+                .help(item.isUnassigned
+                      ? "No symbol match for this folder. Pick one with the pencil button, or change the matching mode in Settings."
+                      : "Apply the current icon to this folder")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -112,6 +122,7 @@ struct FolderRowView: View {
         )
         .contextMenu {
             Button("Apply Icon") { onApply() }
+                .disabled(item.isUnassigned || item.symbolNames.isEmpty)
             Button("Restore Default") { onRestore() }
             Divider()
             Button("Copy Icon Settings") { onCopySettings() }
@@ -253,9 +264,11 @@ struct FolderRowView: View {
         }
     }
 
-    // Show retry only when matching failed or produced the generic fallback.
+    // Show retry only when matching failed, produced the generic fallback, or
+    // gave up on the folder entirely.
     private var shouldShowRetry: Bool {
         if case .failed = item.status { return true }
+        if item.isUnassigned { return true }
         let name = item.symbolName
         return name == "folder" || name == "folder.fill"
     }

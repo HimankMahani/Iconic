@@ -237,6 +237,165 @@ struct SymbolCell: View {
     }
 }
 
+struct EmojiBrowserView: View {
+    let onSelect: (String) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var searchText = ""
+
+    private var filteredEmoji: [String] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !query.isEmpty else {
+            return Array(EmojiMetadata.allEmoji.prefix(240))
+        }
+
+        let tokens = query
+            .split { !$0.isLetter && !$0.isNumber }
+            .map(String.init)
+
+        if query.isEmojiGlyph {
+            return EmojiMetadata.allEmoji.filter { $0.contains(query) }
+        }
+
+        let ranked = EmojiMetadata.allEmoji.compactMap { emoji -> (emoji: String, score: Int)? in
+            let name = EmojiMetadata.appleName[emoji]?.lowercased() ?? ""
+            let tags = EmojiMetadata.searchTags[emoji] ?? []
+            let tagText = tags.joined(separator: " ").lowercased()
+            var score = 0
+
+            if name == query { score += 120 }
+            if tags.contains(query) { score += 100 }
+            if name.hasPrefix(query) { score += 80 }
+            if name.contains(query) { score += 55 }
+            if tagText.contains(query) { score += 40 }
+
+            for token in tokens {
+                if name.split(separator: " ").contains(Substring(token)) { score += 18 }
+                if tags.contains(token) { score += 18 }
+                if name.contains(token) { score += 8 }
+                if tagText.contains(token) { score += 8 }
+            }
+
+            return score > 0 ? (emoji, score) : nil
+        }
+
+        return ranked
+            .sorted {
+                if $0.score == $1.score {
+                    return emojiName($0.emoji) < emojiName($1.emoji)
+                }
+                return $0.score > $1.score
+            }
+            .map(\.emoji)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Emoji Browser")
+                    .font(.headline)
+                Spacer()
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(16)
+
+            Divider()
+
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                TextField("Search emoji by name or tag...", text: $searchText)
+                    .textFieldStyle(.plain)
+                if !searchText.isEmpty {
+                    Button {
+                        searchText = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Color(nsColor: .controlBackgroundColor))
+            .cornerRadius(8)
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+
+            ScrollView {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 8), spacing: 8) {
+                    ForEach(filteredEmoji, id: \.self) { emoji in
+                        EmojiCell(emoji: emoji, name: emojiName(emoji)) {
+                            onSelect(emoji)
+                            dismiss()
+                        }
+                    }
+                }
+                .padding(16)
+            }
+
+            Divider()
+
+            HStack {
+                Text("\(filteredEmoji.count) emoji")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+            .padding(12)
+        }
+        .frame(width: 640, height: 520)
+    }
+
+    private func emojiName(_ emoji: String) -> String {
+        EmojiMetadata.appleName[emoji] ?? emoji
+    }
+}
+
+private struct EmojiCell: View {
+    let emoji: String
+    let name: String
+    let onTap: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Button {
+            onTap()
+        } label: {
+            VStack(spacing: 4) {
+                Text(emoji)
+                    .font(.system(size: 30))
+                    .frame(width: 36, height: 36)
+
+                if isHovered {
+                    Text(name)
+                        .font(.system(size: 9))
+                        .lineLimit(2)
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.secondary)
+                        .frame(height: 22)
+                }
+            }
+            .frame(width: 70, height: 70)
+            .background(isHovered ? Color.accentColor.opacity(0.1) : Color.clear)
+            .cornerRadius(8)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            isHovered = hovering
+        }
+        .help(name)
+    }
+}
+
 #Preview {
     SymbolBrowserView { symbol in
         print("Selected: \(symbol)")

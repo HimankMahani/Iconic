@@ -64,9 +64,14 @@ struct ComparisonView: View {
                             RoundedRectangle(cornerRadius: 12)
                                 .fill(.quaternary)
                                 .frame(width: 200, height: 200)
-                            Image(systemName: item.symbolName)
-                                .font(.system(size: 80))
-                                .foregroundStyle(.secondary)
+                            if item.symbolName.isEmojiGlyph {
+                                Text(item.symbolName)
+                                    .font(.system(size: 80))
+                            } else {
+                                Image(systemName: item.symbolName)
+                                    .font(.system(size: 80))
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
                 }

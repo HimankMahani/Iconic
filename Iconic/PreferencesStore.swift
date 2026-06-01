@@ -230,6 +230,26 @@ enum ExcludePatternsStore {
     }
 }
 
+// MARK: - Scan Depth Limit
+
+enum ScanDepthStore {
+    private static let key = "iconic.scanDepthLimit"
+    static let defaultLimit: Int = 10
+    static let minLimit: Int = 1
+    static let maxLimit: Int = 20
+
+    static var limit: Int {
+        get {
+            if UserDefaults.standard.object(forKey: key) == nil {
+                return defaultLimit
+            }
+            let raw = UserDefaults.standard.integer(forKey: key)
+            return min(max(raw, minLimit), maxLimit)
+        }
+        set { UserDefaults.standard.set(min(max(newValue, minLimit), maxLimit), forKey: key) }
+    }
+}
+
 // MARK: - Recent Folders
 
 struct RecentFolder: Identifiable, Codable, Hashable {

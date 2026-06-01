@@ -442,6 +442,70 @@ struct EmojiMapper {
         return dict
     }()
 
+    /// User folder names are often colloquial ("hen", "kitty", "pics") while
+    /// Apple's emoji names are canonical ("chicken", "cat face", "camera").
+    /// Expand terms before full-catalog search so emoji mode behaves like
+    /// semantic search instead of only exact dictionary lookup.
+    private static let semanticAliases: [String: [String]] = [
+        // Animals
+        "hen": ["chicken", "bird", "farm"],
+        "hens": ["chicken", "bird", "farm"],
+        "rooster": ["chicken", "bird", "farm"],
+        "poultry": ["chicken", "bird", "farm"],
+        "chick": ["baby chick", "chicken", "bird"],
+        "chicks": ["baby chick", "chicken", "bird"],
+        "kitty": ["cat", "cat face"],
+        "kitten": ["cat", "cat face"],
+        "puppy": ["dog", "dog face"],
+        "pup": ["dog", "dog face"],
+        "doggo": ["dog", "dog face"],
+        "horseback": ["horse", "horse face"],
+        "pony": ["horse", "horse face"],
+        "bunny": ["rabbit", "rabbit face"],
+        "hare": ["rabbit", "rabbit face"],
+        "mousey": ["mouse", "mouse face"],
+        "cowboy": ["cowboy face", "cow"],
+        "dino": ["dinosaur", "t-rex"],
+
+        // Media and creative shorthand
+        "pic": ["photo", "camera", "picture"],
+        "pics": ["photo", "camera", "pictures"],
+        "img": ["image", "picture"],
+        "imgs": ["images", "pictures"],
+        "vid": ["video", "movie"],
+        "vids": ["videos", "movies"],
+        "cinema": ["movie", "film"],
+        "tunes": ["music", "musical note"],
+        "beats": ["music", "drum"],
+        "sketchbook": ["sketch", "drawing"],
+
+        // Work and life shorthand
+        "vacay": ["vacation", "beach", "airplane"],
+        "holiday": ["vacation", "beach"],
+        "holidays": ["vacation", "beach"],
+        "trip": ["luggage", "airplane", "map"],
+        "trips": ["luggage", "airplane", "map"],
+        "cash": ["money", "banknote"],
+        "pay": ["money", "credit card"],
+        "bills": ["receipt", "money"],
+        "todos": ["check mark", "clipboard"],
+        "todo": ["check mark", "clipboard"],
+        "chores": ["broom", "check mark"],
+        "errands": ["shopping", "check mark"],
+
+        // Tech shorthand
+        "js": ["javascript", "scroll", "laptop"],
+        "ts": ["typescript", "scroll", "laptop"],
+        "node": ["package", "laptop"],
+        "npm": ["package", "laptop"],
+        "mac": ["desktop computer", "laptop"],
+        "macos": ["desktop computer", "laptop"],
+        "db": ["database", "card file box"],
+        "database": ["card file box", "bar chart"],
+        "server": ["desktop computer", "package"],
+        "servers": ["desktop computer", "package"]
+    ]
+
     /// Resolve a folder name to an emoji. Discards confidence.
     static func emoji(for folderName: String, customMappings: [String: String] = [:]) -> String {
         return emojiWithConfidence(for: folderName, customMappings: customMappings).emoji
@@ -466,33 +530,34 @@ struct EmojiMapper {
     static func emojiWithConfidence(for folderName: String,
                                     customMappings: [String: String] = [:]) -> LocalMatch {
         let normalized = folderName.lowercased()
-        let words = tokenize(normalized)
+        let literalWords = tokenize(normalized)
+        let words = expandSemanticAliases(for: literalWords)
 
         // 1. Custom: exact full-name match.
         if let e = customMappings[normalized] {
             return LocalMatch(emoji: e, confidence: 1.0, source: .customMapping)
         }
         // 2. Custom: any token match.
-        for w in words {
+        for w in literalWords {
             if let e = customMappings[w] {
                 return LocalMatch(emoji: e, confidence: 1.0, source: .customMapping)
             }
         }
-        // 3. Built-in: exact full-name match.
+        // 3. Built-in: exact full-name match for curated high-confidence cases.
         if let e = lookup[normalized] {
             return LocalMatch(emoji: e, confidence: 1.0, source: .builtInDictionary)
         }
-        // 4. Built-in: any token match.
-        for w in words {
-            if let e = lookup[w] {
-                return LocalMatch(emoji: e, confidence: 0.95, source: .builtInDictionary)
-            }
-        }
-        // 5. Tag-based search over EmojiMetadata.searchTags.
-        if let tagResult = tagSearch(words: words) {
+        // 4. Full catalog search over Apple's emoji names and generated tags.
+        if let tagResult = catalogSearch(normalized: normalized, words: words) {
             return LocalMatch(emoji: tagResult.emoji,
                               confidence: tagResult.confidence,
                               source: .tagSearch)
+        }
+        // 5. Built-in: any token match as a curated fallback.
+        for w in words {
+            if let e = lookup[w] {
+                return LocalMatch(emoji: e, confidence: 0.82, source: .builtInDictionary)
+            }
         }
         // 6. Substring: lookup keys contained in the folder name.
         for (key, e) in lookup where key.count >= 3 && normalized.contains(key) {
@@ -528,32 +593,68 @@ struct EmojiMapper {
         let confidence: Double
     }
 
-    /// Tag-based search: counts how many tokens hit the same emoji's tag set.
-    /// Returns the emoji with the highest token-overlap, scored 0.78–0.88.
-    private static func tagSearch(words: [String]) -> TagResult? {
+    /// Full catalog search across Apple's emoji names and generated tags.
+    /// This makes emoji mode behave like search first, with the curated
+    /// dictionary as a fallback rather than the limiting source of truth.
+    private static func catalogSearch(normalized: String, words: [String]) -> TagResult? {
         guard !words.isEmpty else { return nil }
         var scores: [String: Int] = [:]
-        for w in words where w.count >= 3 {
-            if let candidates = tagIndex[w] {
-                // Each tag match increments score. Common tags (e.g. "person")
-                // hit many emoji but we still let count decide the winner so
-                // a multi-word folder ("running shoes") finds the right one.
-                for emoji in candidates {
-                    scores[emoji, default: 0] += 1
-                }
+
+        for emoji in EmojiMetadata.allEmoji {
+            let name = EmojiMetadata.appleName[emoji]?.lowercased() ?? ""
+            let tags = EmojiMetadata.searchTags[emoji] ?? []
+            let tagText = tags.joined(separator: " ").lowercased()
+            var score = 0
+
+            if name == normalized { score += 140 }
+            if tags.contains(normalized) { score += 120 }
+            if name.hasPrefix(normalized) { score += 80 }
+            if name.contains(normalized) { score += 55 }
+            if tagText.contains(normalized) { score += 40 }
+
+            for word in words where word.count >= 3 {
+                if name.split(separator: " ").contains(Substring(word)) { score += 22 }
+                if tags.contains(word) { score += 22 }
+                if name.contains(word) { score += 8 }
+                if tagText.contains(word) { score += 8 }
+            }
+
+            if score > 0 {
+                scores[emoji] = score
             }
         }
-        guard let best = scores.max(by: { $0.value < $1.value }), best.value > 0 else {
+
+        guard let best = scores.max(by: { $0.value < $1.value }) else {
             return nil
         }
-        // Confidence: 1 hit = 0.78, 2 hits = 0.83, 3+ hits = 0.88.
-        let confidence: Double
-        switch best.value {
-        case 1: confidence = 0.78
-        case 2: confidence = 0.83
-        default: confidence = 0.88
-        }
+        let confidence = min(0.96, 0.72 + Double(best.value) / 250.0)
         return TagResult(emoji: best.key, confidence: confidence)
+    }
+
+    private static func expandSemanticAliases(for words: [String]) -> [String] {
+        var expanded: [String] = []
+        var seen = Set<String>()
+
+        func append(_ term: String) {
+            let trimmed = term.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard !trimmed.isEmpty, !seen.contains(trimmed) else { return }
+            seen.insert(trimmed)
+            expanded.append(trimmed)
+        }
+
+        for word in words {
+            append(word)
+            if let aliases = semanticAliases[word] {
+                aliases.forEach(append)
+            }
+            if word.hasSuffix("s"), word.count > 3 {
+                let singular = String(word.dropLast())
+                append(singular)
+                semanticAliases[singular]?.forEach(append)
+            }
+        }
+
+        return expanded
     }
 
     // MARK: - Tokenize / similarity (mirrors SymbolMapper)

@@ -28,7 +28,6 @@ struct KeyboardShortcutsView: View {
         KeyboardShortcut(category: "Navigation", action: "Focus Search", keys: "⌘F", description: "Move focus to search field"),
 
         // Actions
-        KeyboardShortcut(category: "Actions", action: "Toggle Preview", keys: "Space", description: "Toggle preview for selected folder"),
         KeyboardShortcut(category: "Actions", action: "Apply", keys: "Return", description: "Apply icon to selected folder(s)"),
         KeyboardShortcut(category: "Actions", action: "Restore", keys: "Delete", description: "Restore default icon for selected folder(s)"),
         KeyboardShortcut(category: "Actions", action: "Select All", keys: "⌘A", description: "Select all visible folders"),
@@ -42,10 +41,9 @@ struct KeyboardShortcutsView: View {
         KeyboardShortcut(category: "Filters", action: "Show Failed", keys: "⌘4", description: "Show only failed folders"),
         KeyboardShortcut(category: "Filters", action: "Show Pending", keys: "⌘5", description: "Show only pending folders"),
 
-        // Modes
-        KeyboardShortcut(category: "Modes", action: "Toggle Preview Mode", keys: "⌘P", description: "Enable/disable dry run preview mode"),
-        KeyboardShortcut(category: "Modes", action: "Apply All", keys: "⌘⇧A", description: "Apply icons to all folders"),
-        KeyboardShortcut(category: "Modes", action: "Restore All", keys: "⌘⇧R", description: "Restore all folders to default"),
+        // Batch
+        KeyboardShortcut(category: "Batch", action: "Apply All", keys: "⌘⇧A", description: "Apply icons to all folders"),
+        KeyboardShortcut(category: "Batch", action: "Restore All", keys: "⌘⇧R", description: "Restore all folders to default"),
 
         // General
         KeyboardShortcut(category: "General", action: "Choose Folder", keys: "⌘O", description: "Open folder picker"),
@@ -65,7 +63,7 @@ struct KeyboardShortcutsView: View {
     }
 
     private var groupedShortcuts: [(String, [KeyboardShortcut])] {
-        let categories = ["Navigation", "Actions", "Filters", "Modes", "General"]
+        let categories = ["Navigation", "Actions", "Filters", "Batch", "General"]
         return categories.compactMap { category in
             let items = filteredShortcuts.filter { $0.category == category }
             return items.isEmpty ? nil : (category, items)

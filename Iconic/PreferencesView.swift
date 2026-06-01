@@ -32,6 +32,11 @@ struct PreferencesView: View {
     @State private var settingsSearchText: String = ""
     @State private var isSearching: Bool = false
 
+    @State private var excludePatterns: [String] = ExcludePatternsStore.patterns
+    @State private var newExcludePattern: String = ""
+    @AppStorage("iconic.excludePatterns.populatedDefaults") private var didPopulateExcludeDefaults: Bool = false
+    @AppStorage("iconic.scanDepthLimit") private var scanDepthLimit: Int = ScanDepthStore.defaultLimit
+
     // Map of search keywords to tabs
     private let settingsKeywords: [(keyword: String, tab: String)] = [
         ("api", "Gemini AI"),
@@ -62,6 +67,11 @@ struct PreferencesView: View {
         ("smart", "Detection"),
         ("git", "Detection"),
         ("xcode", "Detection"),
+        ("exclude", "Detection"),
+        ("ignore", "Detection"),
+        ("skip", "Detection"),
+        ("depth", "Detection"),
+        ("scan", "Detection"),
         ("preset", "Presets"),
         ("save", "Presets"),
         ("import", "Presets"),
@@ -202,6 +212,8 @@ struct PreferencesView: View {
             menuBarEnabled = menuBarManager.isMenuBarMode
             monitoredLocations = BackgroundMonitoringStore.monitoredLocations
             aiContentAnalysisEnabled = AIContentAnalysisStore.isEnabled
+            populateExcludeDefaultsIfNeeded()
+            excludePatterns = ExcludePatternsStore.patterns
         }
     }
 
@@ -881,45 +893,157 @@ struct PreferencesView: View {
     // MARK: - Detection Tab
 
     private var detectionTab: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Smart Content Detection")
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Smart Content Detection")
+                    .font(.headline)
+                Text("Analyze folder contents to automatically detect special types like git repos, Xcode projects, and media folders.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                matchingPriorityBanner
+
+                Divider()
+
+                Toggle("Enable smart content detection", isOn: $smartDetectionEnabled)
+                    .onChange(of: smartDetectionEnabled) { _, newValue in
+                        SmartContentDetectionStore.isEnabled = newValue
+                    }
+
+                if smartDetectionEnabled {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Detected folder types:")
+                            .font(.subheadline)
+                            .padding(.top, 8)
+
+                        detectionTypeRow(icon: "arrow.triangle.branch", label: "Git repositories", description: "Folders containing .git")
+                        detectionTypeRow(icon: "hammer.fill", label: "Xcode projects", description: "Folders containing .xcodeproj")
+                        detectionTypeRow(icon: "cube.fill", label: "Node.js projects", description: "Folders containing package.json")
+                        detectionTypeRow(icon: "chevron.left.forwardslash.chevron.right", label: "Python projects", description: "Folders with requirements.txt or setup.py")
+                        detectionTypeRow(icon: "shippingbox.fill", label: "Docker projects", description: "Folders containing Dockerfile")
+                        detectionTypeRow(icon: "photo.stack", label: "Photo folders", description: "Folders with mostly image files")
+                        detectionTypeRow(icon: "film.stack.fill", label: "Video folders", description: "Folders with mostly video files")
+                    }
+                    .padding(.leading, 20)
+                }
+
+                Text("Note: Content detection takes priority over custom mappings and AI suggestions when enabled.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Divider()
+
+                excludePatternsSection
+
+                Divider()
+
+                scanDepthSection
+            }
+        }
+    }
+
+    private var excludePatternsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Excluded folder names")
                 .font(.headline)
-            Text("Analyze folder contents to automatically detect special types like git repos, Xcode projects, and media folders.")
+            Text("Folders matching these patterns are skipped during scanning.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            matchingPriorityBanner
-
-            Divider()
-
-            Toggle("Enable smart content detection", isOn: $smartDetectionEnabled)
-                .onChange(of: smartDetectionEnabled) { _, newValue in
-                    SmartContentDetectionStore.isEnabled = newValue
+            HStack(spacing: 8) {
+                TextField("Add pattern (e.g. node_modules)", text: $newExcludePattern)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit { addExcludePattern() }
+                Button {
+                    addExcludePattern()
+                } label: {
+                    Image(systemName: "plus.circle.fill")
                 }
-
-            if smartDetectionEnabled {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Detected folder types:")
-                        .font(.subheadline)
-                        .padding(.top, 8)
-
-                    detectionTypeRow(icon: "arrow.triangle.branch", label: "Git repositories", description: "Folders containing .git")
-                    detectionTypeRow(icon: "hammer.fill", label: "Xcode projects", description: "Folders containing .xcodeproj")
-                    detectionTypeRow(icon: "cube.fill", label: "Node.js projects", description: "Folders containing package.json")
-                    detectionTypeRow(icon: "chevron.left.forwardslash.chevron.right", label: "Python projects", description: "Folders with requirements.txt or setup.py")
-                    detectionTypeRow(icon: "shippingbox.fill", label: "Docker projects", description: "Folders containing Dockerfile")
-                    detectionTypeRow(icon: "photo.stack", label: "Photo folders", description: "Folders with mostly image files")
-                    detectionTypeRow(icon: "film.stack.fill", label: "Video folders", description: "Folders with mostly video files")
-                }
-                .padding(.leading, 20)
+                .buttonStyle(.borderless)
+                .disabled(newExcludePattern.trimmingCharacters(in: .whitespaces).isEmpty)
             }
 
-            Spacer()
+            if excludePatterns.isEmpty {
+                Text("No excluded patterns")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 12)
+            } else {
+                List {
+                    ForEach(excludePatterns, id: \.self) { pattern in
+                        HStack {
+                            Image(systemName: "nosign")
+                                .foregroundStyle(.secondary)
+                                .frame(width: 18)
+                            Text(pattern)
+                                .font(.system(.body, design: .monospaced))
+                            Spacer()
+                            Button {
+                                removeExcludePattern(pattern)
+                            } label: {
+                                Image(systemName: "trash")
+                                    .foregroundStyle(.red)
+                            }
+                            .buttonStyle(.borderless)
+                            .help("Remove pattern")
+                        }
+                        .padding(.vertical, 2)
+                    }
+                }
+                .listStyle(.inset)
+                .frame(minHeight: 140, maxHeight: 200)
+            }
+        }
+    }
 
-            Text("Note: Content detection takes priority over custom mappings and AI suggestions when enabled.")
+    private var scanDepthSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Maximum scan depth")
+                .font(.headline)
+            Text("Limits how deep into subfolders the app scans. Lower values are faster on large folder trees.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            HStack {
+                Stepper(value: $scanDepthLimit,
+                        in: ScanDepthStore.minLimit...ScanDepthStore.maxLimit) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.down.to.line")
+                            .foregroundStyle(.secondary)
+                        Text("\(scanDepthLimit) level\(scanDepthLimit == 1 ? "" : "s")")
+                            .font(.system(.body, design: .monospaced))
+                    }
+                }
+                .frame(maxWidth: 260)
+                Spacer()
+            }
         }
+    }
+
+    private func addExcludePattern() {
+        let trimmed = newExcludePattern.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        ExcludePatternsStore.add(trimmed)
+        excludePatterns = ExcludePatternsStore.patterns
+        newExcludePattern = ""
+    }
+
+    private func removeExcludePattern(_ pattern: String) {
+        ExcludePatternsStore.remove(pattern)
+        excludePatterns = ExcludePatternsStore.patterns
+    }
+
+    private func populateExcludeDefaultsIfNeeded() {
+        guard !didPopulateExcludeDefaults else { return }
+        let seed = [".git", "node_modules", "DerivedData", ".build", "Pods",
+                    ".next", ".cache", "__pycache__", ".venv"]
+        if ExcludePatternsStore.patterns.isEmpty {
+            ExcludePatternsStore.patterns = seed
+        } else {
+            for p in seed { ExcludePatternsStore.add(p) }
+        }
+        didPopulateExcludeDefaults = true
     }
 
     @ViewBuilder

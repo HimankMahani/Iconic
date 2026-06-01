@@ -11,7 +11,6 @@ struct FolderRowView: View {
 
     @ObservedObject var item: FolderItem
     @EnvironmentObject private var suggestionsStore: SmartSuggestionsStore
-    let isDryRunMode: Bool
     let isSelected: Bool
     let onApply: () -> Void
     let onRestore: () -> Void
@@ -31,13 +30,14 @@ struct FolderRowView: View {
     let templates: [IconTemplate]
     let onApplyTemplate: (IconTemplate) -> Void
     let onShowComparison: () -> Void
-    var willAutoApply: Bool = false
+    let onRetry: () -> Void
 
     @State private var showingSymbolEditor = false
     @State private var draftSymbol: String = ""
     @State private var showingAdjustPopover = false
     @State private var showingImagePicker = false
     @State private var showingSymbolBrowser = false
+    @State private var showingEmojiBrowser = false
     @State private var newLayerSymbol: String = ""
 
     var body: some View {
@@ -50,63 +50,22 @@ struct FolderRowView: View {
                     .font(.body)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                HStack(spacing: 4) {
-                    Image(systemName: item.symbolName)
-                        .font(.caption2)
-                    Text(item.symbolName)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+                glyphLabel(item.symbolName)
                 matchSourceBadge
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            if willAutoApply {
-                HStack(spacing: 4) {
-                    Image(systemName: "wand.and.stars")
-                        .font(.caption)
-                    Text("Auto-Apply")
-                        .font(.caption2)
-                        .fontWeight(.medium)
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(Color.purple.opacity(0.15))
-                .foregroundStyle(Color.purple)
-                .cornerRadius(6)
-                .help("This folder matches an auto-apply rule and will be applied automatically when you exit Preview Mode")
-            }
-
             statusBadge
 
-            ColorPicker("", selection: Binding(
-                get: {
-                    if let folder = item.folderColor {
-                        return Color(folder)
-                    }
-                    return Color(NSColor.systemBlue)
-                },
-                set: { newColor in
-                    let nsColor = NSColor(newColor)
-                    item.folderColor = nsColor
-                    onFolderColorChange(nsColor)
+            if shouldShowRetry {
+                Button {
+                    onRetry()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
                 }
-            ))
-            .labelsHidden()
-            .frame(width: 28)
-            .help("Choose folder color")
-
-            ColorPicker("", selection: Binding(
-                get: { Color(item.symbolColor ?? ColorPreferences.getDefaultColor()) },
-                set: { newColor in
-                    let nsColor = NSColor(newColor)
-                    item.symbolColor = nsColor
-                    onColorChange(nsColor)
-                }
-            ))
-            .labelsHidden()
-            .frame(width: 28)
-            .help("Choose symbol color")
+                .buttonStyle(.borderless)
+                .help("Retry matching for this folder")
+            }
 
             Button {
                 draftSymbol = item.symbolName
@@ -131,31 +90,16 @@ struct FolderRowView: View {
                 adjustPopover
             }
 
-            Button {
-                onShowComparison()
-            } label: {
-                Image(systemName: "arrow.left.and.right")
-            }
-            .buttonStyle(.borderless)
-            .help("Compare before/after")
-
             moreOptionsMenu
 
             Button("Restore") { onRestore() }
                 .buttonStyle(.bordered)
-                .disabled(isDryRunMode)
-            Button(isDryRunMode ? "Preview" : "Apply") {
-                if !isDryRunMode {
-                    onApply()
-                }
-            }
+            Button("Apply") { onApply() }
                 .buttonStyle(.borderedProminent)
-                .disabled(isDryRunMode)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(isSelected ? Color.accentColor.opacity(0.18) : Color.clear)
-        .background(willAutoApply ? Color.purple.opacity(0.05) : Color.clear)
         .contentShape(Rectangle())
         .gesture(
             TapGesture().modifiers(.shift).onEnded { onExtendSelect() }
@@ -168,9 +112,7 @@ struct FolderRowView: View {
         )
         .contextMenu {
             Button("Apply Icon") { onApply() }
-                .disabled(isDryRunMode)
             Button("Restore Default") { onRestore() }
-                .disabled(isDryRunMode)
             Divider()
             Button("Copy Icon Settings") { onCopySettings() }
             Button("Paste Icon Settings") { onPasteSettings() }
@@ -277,11 +219,45 @@ struct FolderRowView: View {
             ZStack {
                 RoundedRectangle(cornerRadius: 6)
                     .fill(.quaternary)
-                Image(systemName: item.symbolName)
-                    .font(.system(size: 22))
+                glyphView(item.symbolName, size: 22)
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    @ViewBuilder
+    private func glyphView(_ glyph: String, size: CGFloat) -> some View {
+        if glyph.isEmojiGlyph {
+            Text(glyph)
+                .font(.system(size: size))
+        } else {
+            Image(systemName: glyph)
+                .font(.system(size: size))
+        }
+    }
+
+    @ViewBuilder
+    private func glyphLabel(_ glyph: String) -> some View {
+        if glyph.isEmojiGlyph {
+            Text(glyph)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } else {
+            HStack(spacing: 4) {
+                Image(systemName: glyph)
+                    .font(.caption2)
+                Text(glyph)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    // Show retry only when matching failed or produced the generic fallback.
+    private var shouldShowRetry: Bool {
+        if case .failed = item.status { return true }
+        let name = item.symbolName
+        return name == "folder" || name == "folder.fill"
     }
 
     @ViewBuilder
@@ -326,11 +302,11 @@ struct FolderRowView: View {
 
     private var symbolEditor: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("SF Symbol name")
+            Text(IconStyleStore.current == .emoji ? "Emoji" : "SF Symbol name")
                 .font(.headline)
 
             // Suggestions section
-            let suggestions = suggestionsStore.getSuggestions(for: item.displayName)
+            let suggestions = IconStyleStore.current == .sfSymbol ? suggestionsStore.getSuggestions(for: item.displayName) : []
             if !suggestions.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Suggestions")
@@ -342,8 +318,7 @@ struct FolderRowView: View {
                                 draftSymbol = symbol
                             } label: {
                                 HStack(spacing: 4) {
-                                    Image(systemName: symbol)
-                                        .font(.caption)
+                                    glyphView(symbol, size: 12)
                                     Text(symbol)
                                         .font(.caption2)
                                 }
@@ -357,26 +332,36 @@ struct FolderRowView: View {
                 }
             }
 
-            TextField("e.g. music.note", text: $draftSymbol)
+            TextField(IconStyleStore.current == .emoji ? "e.g. 🎵" : "e.g. music.note", text: $draftSymbol)
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 240)
                 .onSubmit { commit() }
 
-            Button {
-                showingSymbolBrowser = true
-            } label: {
-                Label("Browse Symbols…", systemImage: "square.grid.3x3")
+            if IconStyleStore.current == .sfSymbol {
+                Button {
+                    showingSymbolBrowser = true
+                } label: {
+                    Label("Browse Symbols…", systemImage: "square.grid.3x3")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            } else {
+                Button {
+                    showingEmojiBrowser = true
+                } label: {
+                    Label("Browse Emoji…", systemImage: "face.smiling")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
 
             HStack {
-                if NSImage(systemSymbolName: draftSymbol, accessibilityDescription: nil) != nil {
+                if isValidDraftGlyph {
                     Label("Valid", systemImage: "checkmark.seal.fill")
                         .foregroundStyle(.green)
                         .font(.caption)
                 } else {
-                    Label("Unknown symbol", systemImage: "questionmark.circle")
+                    Label(IconStyleStore.current == .emoji ? "Enter an emoji" : "Unknown symbol", systemImage: "questionmark.circle")
                         .foregroundStyle(.orange)
                         .font(.caption)
                 }
@@ -384,7 +369,7 @@ struct FolderRowView: View {
                 Button("Cancel") { showingSymbolEditor = false }
                 Button("Apply") { commit() }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(draftSymbol.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(!isValidDraftGlyph)
             }
         }
         .padding(14)
@@ -392,6 +377,12 @@ struct FolderRowView: View {
             SymbolBrowserView { symbol in
                 draftSymbol = symbol
                 showingSymbolBrowser = false
+            }
+        }
+        .sheet(isPresented: $showingEmojiBrowser) {
+            EmojiBrowserView { emoji in
+                draftSymbol = emoji
+                showingEmojiBrowser = false
             }
         }
     }
@@ -463,8 +454,7 @@ struct FolderRowView: View {
                     VStack(spacing: 4) {
                         ForEach(Array(item.symbolNames.enumerated()), id: \.offset) { index, symbolName in
                             HStack(spacing: 8) {
-                                Image(systemName: symbolName)
-                                    .font(.caption)
+                                glyphView(symbolName, size: 12)
                                 Text(symbolName)
                                     .font(.caption)
                                     .lineLimit(1)
@@ -488,7 +478,7 @@ struct FolderRowView: View {
 
                 if item.symbolNames.count < 3 {
                     HStack {
-                        TextField("Add symbol layer", text: $newLayerSymbol)
+                        TextField(IconStyleStore.current == .emoji ? "Add emoji layer" : "Add symbol layer", text: $newLayerSymbol)
                             .textFieldStyle(.roundedBorder)
                             .font(.caption)
                         Button {
@@ -650,14 +640,14 @@ struct FolderRowView: View {
 
     private func commit() {
         let trimmed = draftSymbol.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { return }
+        guard isValidGlyph(trimmed) else { return }
         onSymbolEdit(trimmed)
         showingSymbolEditor = false
     }
 
     private func addLayer() {
         let trimmed = newLayerSymbol.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty, item.symbolNames.count < 3 else { return }
+        guard isValidGlyph(trimmed), item.symbolNames.count < 3 else { return }
         item.symbolNames.append(trimmed)
         newLayerSymbol = ""
         onAdjust()
@@ -667,5 +657,19 @@ struct FolderRowView: View {
         guard item.symbolNames.count > 1, index < item.symbolNames.count else { return }
         item.symbolNames.remove(at: index)
         onAdjust()
+    }
+
+    private var isValidDraftGlyph: Bool {
+        isValidGlyph(draftSymbol.trimmingCharacters(in: .whitespaces))
+    }
+
+    private func isValidGlyph(_ glyph: String) -> Bool {
+        guard !glyph.isEmpty else { return false }
+        switch IconStyleStore.current {
+        case .emoji:
+            return glyph.isEmojiGlyph
+        case .sfSymbol:
+            return NSImage(systemSymbolName: glyph, accessibilityDescription: nil) != nil
+        }
     }
 }

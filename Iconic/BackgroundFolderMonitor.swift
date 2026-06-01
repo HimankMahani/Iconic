@@ -177,7 +177,7 @@ final class BackgroundFolderMonitor {
         // 1. Auto-apply rule
         if let rule = rulesStore.firstMatch(for: name), rule.autoApply {
             return MatchResult(
-                symbol: rule.symbol,
+                symbol: glyphForCurrentStyle(folderName: name, proposedGlyph: rule.symbol, customMappings: customMappings),
                 symbolColor: rule.symbolColor,
                 folderColor: rule.folderColor,
                 source: .rule
@@ -188,7 +188,7 @@ final class BackgroundFolderMonitor {
         if SmartContentDetectionStore.isEnabled,
            let detectedSymbol = FolderTypeDetector.detectType(at: url) {
             return MatchResult(
-                symbol: detectedSymbol,
+                symbol: smartDetectionGlyph(for: detectedSymbol, folderName: name, customMappings: customMappings),
                 symbolColor: nil,
                 folderColor: nil,
                 source: .smartDetection
@@ -198,7 +198,7 @@ final class BackgroundFolderMonitor {
         // 3. Custom mapping (exact name match)
         if let customSymbol = customMappings[name.lowercased()] {
             return MatchResult(
-                symbol: customSymbol,
+                symbol: glyphForCurrentStyle(folderName: name, proposedGlyph: customSymbol, customMappings: customMappings),
                 symbolColor: nil,
                 folderColor: nil,
                 source: .customMapping
@@ -262,6 +262,36 @@ final class BackgroundFolderMonitor {
             folderColor: nil,
             source: localMatchSource
         )
+    }
+
+    private func glyphForCurrentStyle(folderName: String, proposedGlyph: String, customMappings: [String: String]) -> String {
+        switch IconStyleStore.current {
+        case .sfSymbol:
+            if NSImage(systemSymbolName: proposedGlyph, accessibilityDescription: nil) != nil {
+                return proposedGlyph
+            }
+            return SymbolMapper.symbol(for: folderName, customMappings: customMappings)
+        case .emoji:
+            if proposedGlyph.isEmojiGlyph {
+                return proposedGlyph
+            }
+            return EmojiMapper.emoji(for: folderName, customMappings: customMappings)
+        }
+    }
+
+    private func smartDetectionGlyph(for detectedSymbol: String, folderName: String, customMappings: [String: String]) -> String {
+        guard IconStyleStore.current == .emoji else { return detectedSymbol }
+        switch detectedSymbol {
+        case "arrow.triangle.branch": return "🌿"
+        case "hammer.fill": return "🛠️"
+        case "cube.fill": return "📦"
+        case "chevron.left.forwardslash.chevron.right": return "🐍"
+        case "shippingbox.fill": return "🚢"
+        case "photo.stack": return "🖼️"
+        case "film.stack.fill": return "🎬"
+        default:
+            return EmojiMapper.emoji(for: folderName, customMappings: customMappings)
+        }
     }
 
     private func matchSource(for localSource: SymbolMapper.LocalMatch.Source) -> MatchSource {

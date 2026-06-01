@@ -204,9 +204,6 @@ struct IconRenderer {
 
         // Draw each symbol with slight offset and scale variation for layering effect
         for (index, name) in names.enumerated() {
-            let resolvedName = resolveSymbolName(orFallback: name)
-            guard let symbolName = resolvedName else { continue }
-
             // Layer scaling: first at 100%, second at 80%, third at 70%
             let layerScale: CGFloat
             let layerOffsetX: CGFloat
@@ -229,9 +226,9 @@ struct IconRenderer {
                 continue // Max 3 layers
             }
 
-            if symbolName.isEmojiGlyph {
+            if name.isEmojiGlyph {
                 drawEmojiGlyph(
-                    emoji: symbolName,
+                    emoji: name,
                     iconSize: iconSize,
                     opacity: layerOpacity,
                     scale: scale * Double(layerScale),
@@ -239,6 +236,8 @@ struct IconRenderer {
                     offsetX: Double(layerOffsetX)
                 )
             } else {
+                let resolvedName = resolveSymbolName(orFallback: name)
+                guard let symbolName = resolvedName else { continue }
                 drawSymbol(
                     named: symbolName,
                     color: color,
@@ -265,10 +264,9 @@ struct IconRenderer {
         offsetY: Double,
         offsetX: Double = 0
     ) {
-        // 0.55 gives emoji about the same visual weight on the folder face as
-        // an SF Symbol at 0.42 — emoji glyphs paint to a smaller fraction of
-        // their box than SF Symbols at the same point size.
-        let pointSize = iconSize.width * 0.55 * CGFloat(scale)
+        // Match macOS Customize Folder's restrained emoji treatment: smaller
+        // than a raw emoji glyph would be, centered on the folder face.
+        let pointSize = iconSize.width * 0.40 * CGFloat(scale)
         let font = NSFont(name: "Apple Color Emoji", size: pointSize)
             ?? NSFont.systemFont(ofSize: pointSize)
 
@@ -287,9 +285,7 @@ struct IconRenderer {
         let centerX = iconSize.width / 2.0 + CGFloat(offsetX)
         let rect = NSRect(
             x: centerX - textSize.width / 2.0,
-            // Apple Color Emoji sits a touch above its baseline; nudge down so
-            // it visually centers in the rect like an SF Symbol does.
-            y: centerY - textSize.height / 2.0 - textSize.height * 0.08,
+            y: centerY - textSize.height / 2.0,
             width: textSize.width,
             height: textSize.height
         )
@@ -312,7 +308,7 @@ struct IconRenderer {
         offsetX: Double = 0,
         gradientEnd: NSColor?
     ) {
-        let symbolSide = iconSize.width * 0.42 * CGFloat(scale)
+        let symbolSide = iconSize.width * 0.38 * CGFloat(scale)
         let config = NSImage.SymbolConfiguration(pointSize: symbolSide, weight: .regular)
             .applying(.init(paletteColors: [color]))
 

@@ -19,6 +19,8 @@ struct IconicApp: App {
     @StateObject private var suggestionsStore: SmartSuggestionsStore
     @StateObject private var learningStore: AILearningStore
 
+    @AppStorage("iconic.onboardingCompleted") private var onboardingCompleted = false
+
     init() {
         let m = CustomMappingsStore()
         let r = RulesStore()
@@ -49,6 +51,12 @@ struct IconicApp: App {
                 .environmentObject(suggestionsStore)
                 .environmentObject(learningStore)
                 .environmentObject(appDelegate.menuBarManager)
+                .sheet(isPresented: Binding(
+                    get: { !onboardingCompleted },
+                    set: { newValue in if !newValue { onboardingCompleted = true } }
+                )) {
+                    OnboardingView()
+                }
         }
         .windowStyle(.titleBar)
         .windowResizability(.contentSize)

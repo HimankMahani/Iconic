@@ -29,31 +29,13 @@ struct ContentView: View {
     @State private var showingBackups = false
     @State private var newBackupName = ""
     @State private var comparisonItem: FolderItem? = nil
-    @State private var currentTip: String?
-    @State private var hasShownContextMenuTip = UserDefaults.standard.bool(forKey: "iconic.tip.contextMenu.shown")
-    @State private var hasShownPostScanTip = UserDefaults.standard.bool(forKey: "iconic.tip.postScan.shown")
-    @State private var showWelcomeBanner = !UserDefaults.standard.bool(forKey: "iconic.welcome.shown")
     @FocusState private var listFocused: Bool
-
-    private let tips = [
-        "Right-click any folder for advanced options like templates and copy/paste",
-        "Press \u{2318}/ to see all keyboard shortcuts",
-        "Create templates to reuse icon styles across folders",
-        "Enable Auto-Watch in Settings to monitor folders automatically"
-    ]
 
     var body: some View {
         VStack(spacing: 0) {
             header
-            if let tip = currentTip {
-                tipBanner(tip)
-            }
-            if showWelcomeBanner && vm.items.isEmpty {
-                WelcomeBanner {
-                    showWelcomeBanner = false
-                    UserDefaults.standard.set(true, forKey: "iconic.welcome.shown")
-                }
-            }
+            Divider()
+            controlStrip
             Divider()
             content
             Divider()
@@ -83,14 +65,8 @@ struct ContentView: View {
         .onAppear {
             vm.restoreLastFolderIfAvailable()
             reloadFolderLists()
-            showInitialTipIfNeeded()
         }
         .onChange(of: vm.rootURLs) { _, _ in reloadFolderLists() }
-        .onChange(of: vm.items.count) { _, newCount in
-            if newCount > 0 && !hasShownPostScanTip {
-                showPostScanTutorial()
-            }
-        }
         .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
             handleDrop(providers: providers)
         }
@@ -200,23 +176,6 @@ struct ContentView: View {
         favoriteFolders = FavoritesStore.load()
     }
 
-    private func tipBanner(_ tip: String) -> some View {
-        HStack(spacing: 8) {
-            Text(tip)
-                .font(.caption)
-            Spacer()
-            Button("Got it") {
-                dismissCurrentTip()
-            }
-            .font(.caption)
-            .buttonStyle(.plain)
-            .foregroundStyle(Color.accentColor)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(Color.accentColor.opacity(0.1))
-    }
-
     @ViewBuilder
     private var batchSummaryBanner: some View {
         if vm.showBatchSummary, let summary = vm.lastBatchSummary {
@@ -266,26 +225,6 @@ struct ContentView: View {
             .padding(.bottom, 80)
             .transition(.move(edge: .bottom).combined(with: .opacity))
             .animation(.spring(duration: 0.3), value: vm.showBatchSummary)
-        }
-    }
-
-    private func showInitialTipIfNeeded() {
-        if !hasShownContextMenuTip, let first = tips.first {
-            currentTip = first
-        }
-    }
-
-    private func showPostScanTutorial() {
-        currentTip = "\u{2728} Found \(vm.items.count) folders! Click 'Apply All' to set icons, or click any folder to customize first."
-        hasShownPostScanTip = true
-        UserDefaults.standard.set(true, forKey: "iconic.tip.postScan.shown")
-    }
-
-    private func dismissCurrentTip() {
-        currentTip = nil
-        if !hasShownContextMenuTip {
-            hasShownContextMenuTip = true
-            UserDefaults.standard.set(true, forKey: "iconic.tip.contextMenu.shown")
         }
     }
 
@@ -350,11 +289,6 @@ struct ContentView: View {
                 .keyboardShortcut("4", modifiers: [.command])
             Button("Show Pending") { vm.statusFilter = .pending }
                 .keyboardShortcut("5", modifiers: [.command])
-            Button("Toggle Preview Mode") {
-                vm.isDryRunMode.toggle()
-            }
-            .keyboardShortcut("p", modifiers: [.command])
-            .disabled(vm.items.isEmpty || vm.isApplying)
             Button("Apply All") { vm.applyAll() }
                 .keyboardShortcut("a", modifiers: [.command, .shift])
                 .disabled(vm.items.isEmpty || vm.isApplying)
@@ -386,6 +320,35 @@ struct ContentView: View {
     }
 
     // MARK: - Sections
+
+    // Compact strip for only the setting users need while previewing results.
+    private var controlStrip: some View {
+        HStack(spacing: 12) {
+            Text("Icon Style")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Picker("Icon Style", selection: Binding(
+                get: { IconStyleStore.current },
+                set: { newStyle in
+                    IconStyleStore.current = newStyle
+                    if let root = vm.rootURL {
+                        Task { await vm.scan(root) }
+                    }
+                }
+            )) {
+                Text("Emoji").tag(IconStyle.emoji)
+                Text("SF Symbol").tag(IconStyle.sfSymbol)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 180)
+
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
+    }
 
     private var header: some View {
         let folderCount = vm.rootURLs.count
@@ -511,8 +474,6 @@ struct ContentView: View {
                         NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
                     case .showShortcuts:
                         showingShortcutsHelp = true
-                    case .enableMonitoring:
-                        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
                     }
                 }
             }
@@ -673,27 +634,17 @@ struct ContentView: View {
             .cornerRadius(6)
             .frame(maxWidth: 280)
 
-            Text("Filter:")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            HStack(spacing: 6) {
+            Menu {
                 ForEach(IconicViewModel.StatusFilter.allCases, id: \.self) { filter in
-                    Button {
+                    Button(filter.rawValue) {
                         vm.statusFilter = filter
-                    } label: {
-                        Text(filter.rawValue)
-                            .font(.caption)
-                            .fontWeight(vm.statusFilter == filter ? .semibold : .regular)
                     }
-                    .buttonStyle(.plain)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(vm.statusFilter == filter ? Color.accentColor.opacity(0.15) : Color.clear)
-                    .foregroundStyle(vm.statusFilter == filter ? .primary : .secondary)
-                    .cornerRadius(4)
                 }
+            } label: {
+                Label(vm.statusFilter == .all ? "All" : vm.statusFilter.rawValue, systemImage: "line.3.horizontal.decrease.circle")
             }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
 
             Spacer()
 
@@ -701,12 +652,6 @@ struct ContentView: View {
                 Text("\(vm.selectedItemIDs.count) selected")
                     .font(.caption)
                     .foregroundStyle(Color.accentColor)
-                Button("Apply") { vm.applySelected() }
-                    .controlSize(.small)
-                    .disabled(vm.isDryRunMode || vm.isApplying)
-                Button("Restore") { vm.restoreSelected() }
-                    .controlSize(.small)
-                    .disabled(vm.isDryRunMode || vm.isApplying)
                 Button("Clear") { vm.clearSelection() }
                     .controlSize(.small)
                     .keyboardShortcut("d", modifiers: [.command])
@@ -727,7 +672,6 @@ struct ContentView: View {
                 ForEach(vm.filteredItems) { item in
                     FolderRowView(
                         item: item,
-                        isDryRunMode: vm.isDryRunMode,
                         isSelected: vm.selectedItemIDs.contains(item.id),
                         onApply: { vm.apply(item) },
                         onRestore: { vm.restore(item) },
@@ -779,7 +723,9 @@ struct ContentView: View {
                         onShowComparison: {
                             comparisonItem = item
                         },
-                        willAutoApply: vm.autoApplyMatchedIDs.contains(item.id)
+                        onRetry: {
+                            vm.retryItem(item)
+                        }
                     )
                     .id(item.id)
                     .overlay(alignment: .leading) {
@@ -821,10 +767,10 @@ struct ContentView: View {
             return .handled
         }
         .onKeyPress(.return) {
-            if !vm.isDryRunMode, !vm.selectedItems.isEmpty {
+            if !vm.selectedItems.isEmpty {
                 vm.applySelected()
                 return .handled
-            } else if let item = vm.focusedItem, !vm.isDryRunMode {
+            } else if let item = vm.focusedItem {
                 vm.apply(item)
                 return .handled
             }
@@ -841,70 +787,36 @@ struct ContentView: View {
             return .ignored
         }
         .onKeyPress(.space) {
-            vm.isDryRunMode.toggle()
-            return .handled
+            return .ignored
         }
         }
     }
 
     private var footer: some View {
         VStack(spacing: 0) {
-            if vm.isDryRunMode {
-                dryRunBanner
-                Divider()
-            }
-
             HStack(spacing: 10) {
                 matchingModeBadge
 
-                if BackgroundMonitoringStore.isEnabled {
-                    HStack(spacing: 4) {
-                        Circle()
-                            .fill(.green)
-                            .frame(width: 6, height: 6)
-                            .overlay(
-                                Circle()
-                                    .stroke(.green.opacity(0.4), lineWidth: 4)
-                                    .scaleEffect(1.5)
-                                    .opacity(0.6)
-                            )
-                        Text("Monitoring")
-                            .font(.caption)
-                            .fontWeight(.medium)
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.green.opacity(0.15))
-                    .foregroundStyle(.green)
-                    .cornerRadius(6)
-                    .help("Background monitoring is active. Watching \(BackgroundMonitoringStore.monitoredLocations.count) location(s).")
-                }
-
-                if let cache = vm.lastCacheInfo, cache.hitCount > 0 {
-                    HStack(spacing: 4) {
-                        Image(systemName: "bolt.fill")
-                            .font(.caption)
-                        Text("\(cache.hitCount)/\(cache.totalCount) cached")
-                            .font(.caption)
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.green.opacity(0.15))
-                    .foregroundStyle(.green)
-                    .cornerRadius(6)
-                    .help("Results loaded from cache - saved \(cache.hitCount) API calls")
-                }
-
                 if vm.isApplying {
+                    let failedCount = vm.items.reduce(0) { count, it in
+                        if case .failed = it.status { return count + 1 }
+                        return count
+                    }
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 8) {
                             ProgressView(value: vm.progress)
                                 .progressViewStyle(.linear)
                                 .frame(maxWidth: 180)
-                            Text("\(vm.currentProcessingIndex + 1) / \(vm.totalProcessingCount)")
+                            Text("Applying \(vm.currentProcessingIndex + 1)/\(vm.totalProcessingCount)")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .monospacedDigit()
+                            if failedCount > 0 {
+                                Text("— \(failedCount) failed")
+                                    .font(.caption)
+                                    .foregroundStyle(.red)
+                                    .monospacedDigit()
+                            }
                             if let remaining = vm.estimatedRemainingSeconds {
                                 Text("· ~\(formattedTime(remaining)) left")
                                     .font(.caption)
@@ -962,8 +874,6 @@ struct ContentView: View {
                         .font(.caption)
                         .foregroundStyle(.red)
                         .lineLimit(1)
-                } else if vm.isDryRunMode {
-                    dryRunSummary
                 } else {
                     Text("\(vm.items.count) folder\(vm.items.count == 1 ? "" : "s")")
                         .font(.caption)
@@ -971,112 +881,34 @@ struct ContentView: View {
                 }
                 Spacer()
 
-                if vm.isDryRunMode {
-                    Button {
-                        vm.isDryRunMode = false
-                    } label: {
-                        Label("Cancel Preview", systemImage: "xmark")
-                    }
-                    .disabled(vm.isApplying)
-
-                    Button {
-                        vm.isDryRunMode = false
-                        vm.applyAll()
-                    } label: {
-                        Label("Looks Good? Apply Now", systemImage: "checkmark.circle.fill")
-                    }
-                    .keyboardShortcut(.return, modifiers: [.command])
-                    .buttonStyle(.borderedProminent)
-                    .disabled(vm.items.isEmpty || vm.isApplying || vm.pendingItemsCount == 0)
-                } else {
-                    Button {
-                        vm.isDryRunMode = true
-                    } label: {
-                        Label("Preview Mode", systemImage: "eye")
-                    }
-                    .disabled(vm.items.isEmpty || vm.isApplying)
-                    .help("Preview Mode (\u{2318}P)")
-
-                    if vm.rootURLs.count == 1 {
-                        HStack(spacing: 4) {
-                            Toggle(isOn: Binding(
-                                get: { vm.isWatching },
-                                set: { enabled in
-                                    if enabled {
-                                        vm.startWatching()
-                                    } else {
-                                        vm.stopWatching()
-                                    }
-                                }
-                            )) {
-                                Label("Auto-Watch", systemImage: "eye.circle")
-                            }
-                            .disabled(vm.items.isEmpty || vm.isApplying)
-                            .help("Automatically detect and process new folders")
-                            NewBadge()
-                        }
-                    }
-
-                    Button {
-                        showingRestoreConfirm = true
-                    } label: {
-                        Label(vm.hasActiveFilter ? "Restore Filtered (\(vm.batchTargets.count))" : "Restore Defaults",
-                              systemImage: "arrow.uturn.backward")
-                    }
-                    .disabled(vm.items.isEmpty || vm.isApplying)
-                    .help("Restore Defaults (\u{2318}\u{21E7}R)")
-
-                    Button {
-                        let conflicts = vm.foldersWithExistingIcons
-                        if conflicts.isEmpty {
-                            backupStore.capture(name: "Auto-snapshot \(Date())", items: vm.items, rootURL: vm.rootURL)
-                            vm.applyAll()
-                        } else {
-                            conflictedFolders = conflicts
-                            showingConflictAlert = true
-                        }
-                    } label: {
-                        Label(vm.hasActiveFilter ? "Apply Filtered (\(vm.batchTargets.count))" : "Apply All",
-                              systemImage: "checkmark.circle.fill")
-                    }
-                    .keyboardShortcut(.return, modifiers: [.command])
-                    .buttonStyle(.borderedProminent)
-                    .disabled(vm.items.isEmpty || vm.isApplying)
-                    .help("Apply All (\u{2318}\u{23CE})")
+                Button {
+                    showingRestoreConfirm = true
+                } label: {
+                    Label(vm.hasActiveFilter ? "Restore Filtered (\(vm.batchTargets.count))" : "Restore Defaults",
+                          systemImage: "arrow.uturn.backward")
                 }
+                .disabled(vm.items.isEmpty || vm.isApplying)
+                .help("Restore Defaults (\u{2318}\u{21E7}R)")
+
+                Button {
+                    let conflicts = vm.foldersWithExistingIcons
+                    if conflicts.isEmpty {
+                        backupStore.capture(name: "Auto-snapshot \(Date())", items: vm.items, rootURL: vm.rootURL)
+                        vm.applyAll()
+                    } else {
+                        conflictedFolders = conflicts
+                        showingConflictAlert = true
+                    }
+                } label: {
+                    Label(vm.hasActiveFilter ? "Apply Filtered (\(vm.batchTargets.count))" : "Apply All",
+                          systemImage: "checkmark.circle.fill")
+                }
+                .keyboardShortcut(.return, modifiers: [.command])
+                .buttonStyle(.borderedProminent)
+                .disabled(vm.items.isEmpty || vm.isApplying)
+                .help("Apply All (\u{2318}\u{23CE})")
             }
             .padding(12)
-        }
-    }
-
-    private var dryRunBanner: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "eye.fill")
-                .font(.caption)
-            Text("Preview Mode")
-                .font(.caption)
-                .fontWeight(.semibold)
-            Text("Review changes before applying")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 6)
-        .background(Color.blue.opacity(0.1))
-    }
-
-    private var dryRunSummary: some View {
-        HStack(spacing: 4) {
-            if vm.pendingItemsCount > 0 {
-                Text("Ready to apply icons to \(vm.pendingItemsCount) folder\(vm.pendingItemsCount == 1 ? "" : "s")")
-                    .font(.caption)
-                    .foregroundStyle(.primary)
-            }
-            if vm.alreadyAppliedCount > 0 {
-                Text("(\(vm.alreadyAppliedCount) already applied)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
         }
     }
 
@@ -1243,41 +1075,6 @@ struct NewBadge: View {
     }
 }
 
-struct WelcomeBanner: View {
-    let onDismiss: () -> Void
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "sparkles")
-                .font(.title2)
-                .foregroundStyle(.tint)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Welcome to Iconic!")
-                    .font(.headline)
-                Text("Choose a folder to get started. We'll automatically match each subfolder to a beautiful icon.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-
-            Button {
-                onDismiss()
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(12)
-        .background(.tint.opacity(0.1))
-        .cornerRadius(8)
-        .padding(.horizontal, 12)
-        .padding(.top, 8)
-    }
-}
-
 struct FeatureDiscoveryPanel: View {
     @Binding var isShown: Bool
     let onAction: (DiscoveryAction) -> Void
@@ -1287,7 +1084,6 @@ struct FeatureDiscoveryPanel: View {
         case createTemplate
         case openPreferences
         case showShortcuts
-        case enableMonitoring
     }
 
     private var features: [(icon: String, title: String, description: String, action: DiscoveryAction)] {
@@ -1296,7 +1092,6 @@ struct FeatureDiscoveryPanel: View {
             ("square.grid.2x2", "Save Templates", "Create reusable icon styles with colors", .createTemplate),
             ("command", "Keyboard Shortcuts", "Press \u{2318}/ to see all shortcuts", .showShortcuts),
             ("menubar.rectangle", "Menu Bar Mode", "Keep Iconic running when window closes", .openPreferences),
-            ("eye", "Background Monitoring", "Auto-apply icons to new folders", .enableMonitoring),
         ]
     }
 

@@ -165,22 +165,8 @@ final class IconicViewModel: ObservableObject {
     @Published var matchingMode: MatchingMode = .local
     @Published var searchText: String = ""
     @Published var statusFilter: StatusFilter = .all
-    @Published var isDryRunMode: Bool = false {
-        didSet {
-            // Leaving dry run mode clears any pending auto-apply previews so the
-            // visual indicator doesn't stick around outside preview workflows.
-            if !isDryRunMode {
-                autoApplyMatchedIDs.removeAll()
-            }
-        }
-    }
     @Published var selectedItemIDs: Set<UUID> = []
     @Published var isWatching: Bool = false
-
-    /// IDs of items that matched an auto-apply rule during the last scan while
-    /// dry run mode was active. The UI can use this to flag rows that *would*
-    /// be auto-applied if the user exits preview mode.
-    @Published var autoApplyMatchedIDs: Set<UUID> = []
 
     @Published var lastBatchSummary: BatchSummary?
     @Published var showBatchSummary: Bool = false
@@ -260,6 +246,7 @@ final class IconicViewModel: ObservableObject {
         case failed = "Failed"
         case pending = "Pending"
         case changed = "Changed"
+        case unmapped = "Unmapped"
     }
 
     var filteredItems: [FolderItem] {
@@ -289,19 +276,12 @@ final class IconicViewModel: ObservableObject {
             result = result.filter { $0.status == .pending }
         case .changed:
             result = result.filter { $0.hasChanges }
+        case .unmapped:
+            // Generic fallback symbols from IconRenderer.resolveSymbolName
+            result = result.filter { $0.symbolName == "folder" || $0.symbolName == "folder.fill" }
         }
 
         return result
-    }
-
-    // MARK: - Dry Run Helpers
-
-    var pendingItemsCount: Int {
-        items.filter { $0.status == .pending }.count
-    }
-
-    var alreadyAppliedCount: Int {
-        items.filter { $0.status == .applied || $0.status == .restored }.count
     }
 
     var selectedItems: [FolderItem] {
@@ -520,6 +500,7 @@ final class IconicViewModel: ObservableObject {
         if ExcludePatternsStore.isEnabled {
             options.excludePatterns = ExcludePatternsStore.patterns
         }
+        options.maxDepth = ScanDepthStore.limit
 
         // Scan all roots in parallel and merge results
         let allURLs = await withTaskGroup(of: [URL].self) { group in
@@ -610,6 +591,7 @@ final class IconicViewModel: ObservableObject {
         if ExcludePatternsStore.isEnabled {
             options.excludePatterns = ExcludePatternsStore.patterns
         }
+        options.maxDepth = ScanDepthStore.limit
 
         let urls = await FolderScanner.scan(root, options: options) { [weak self] count, url in
             // Called on background queue; hop to main for UI state.
@@ -654,9 +636,6 @@ final class IconicViewModel: ObservableObject {
     }
 
     private func autoApplyMatchingRules() {
-        // Reset the dry-run preview set; it'll be repopulated below if needed.
-        autoApplyMatchedIDs.removeAll()
-
         guard let rulesStore else { return }
         let autoApplyRules = rulesStore.rules.filter { $0.enabled && $0.autoApply }
         guard !autoApplyRules.isEmpty else { return }
@@ -676,25 +655,6 @@ final class IconicViewModel: ObservableObject {
             }
         }
 
-        // Dry run mode: don't apply, just record IDs the UI can flag and tell
-        // the user how many would have been auto-applied.
-        if isDryRunMode {
-            autoApplyMatchedIDs = Set(matchedItems.map { $0.id })
-            if !matchedItems.isEmpty {
-                showToast("\(matchedItems.count) folder(s) matched auto-apply rules (preview mode)", icon: "wand.and.stars", type: .info)
-            }
-            if !conflictItems.isEmpty {
-                errorInfo = ErrorInfo(
-                    message: "\(conflictItems.count) folder(s) have existing icons",
-                    suggestion: "Review and apply manually if needed",
-                    canRetry: false,
-                    isWarning: true
-                )
-            }
-            return
-        }
-
-        // Not in dry run mode — actually apply rule matches.
         for item in matchedItems {
             apply(item)
         }
@@ -723,6 +683,30 @@ final class IconicViewModel: ObservableObject {
             return SymbolMapper.symbol(for: name, customMappings: customMappings)
         case .emoji:
             return EmojiMapper.emoji(for: name, customMappings: customMappings)
+        }
+    }
+
+    /// Keeps older rule/custom values and smart-detection results from leaking
+    /// SF Symbol names into emoji mode, or emoji glyphs into SF Symbol mode.
+    private static func glyphForCurrentStyle(folderName: String, proposedGlyph: String, customMappings: [String: String]) -> String {
+        if isValidAIGlyph(proposedGlyph) {
+            return proposedGlyph
+        }
+        return localGlyph(for: folderName, customMappings: customMappings)
+    }
+
+    private static func smartDetectionGlyph(for detectedSymbol: String, folderName: String, customMappings: [String: String]) -> String {
+        guard IconStyleStore.current == .emoji else { return detectedSymbol }
+        switch detectedSymbol {
+        case "arrow.triangle.branch": return "🌿"
+        case "hammer.fill": return "🛠️"
+        case "cube.fill": return "📦"
+        case "chevron.left.forwardslash.chevron.right": return "🐍"
+        case "shippingbox.fill": return "🚢"
+        case "photo.stack": return "🖼️"
+        case "film.stack.fill": return "🎬"
+        default:
+            return localGlyph(for: folderName, customMappings: customMappings)
         }
     }
 
@@ -782,15 +766,15 @@ final class IconicViewModel: ObservableObject {
 
                 // Highest priority: user-defined rules
                 if let rule = rulesStore?.firstMatch(for: name) {
-                    symbol = rule.symbol
+                    symbol = Self.glyphForCurrentStyle(folderName: name, proposedGlyph: rule.symbol, customMappings: customMappings)
                     ruleSymbolColor = rule.symbolColor
                     ruleFolderColor = rule.folderColor
                     source = .rule(ruleName: rule.name)
                 } else if SmartContentDetectionStore.isEnabled, let detectedSym = FolderTypeDetector.detectType(at: url) {
-                    symbol = detectedSym
+                    symbol = Self.smartDetectionGlyph(for: detectedSym, folderName: name, customMappings: customMappings)
                     source = .smartDetection(type: Self.smartDetectionTypeDescription(for: detectedSym))
                 } else if let customSym = customMappings[name.lowercased()] {
-                    symbol = customSym
+                    symbol = Self.glyphForCurrentStyle(folderName: name, proposedGlyph: customSym, customMappings: customMappings)
                     source = .customMapping
                 } else if let matchResult = geminiMatches[name] {
                     // Use Gemini match if confidence is acceptable (>= 0.6)
@@ -862,15 +846,15 @@ final class IconicViewModel: ObservableObject {
 
             // Highest priority: user-defined rules
             if let rule = rulesStore?.firstMatch(for: name) {
-                sym = rule.symbol
+                sym = Self.glyphForCurrentStyle(folderName: name, proposedGlyph: rule.symbol, customMappings: customMappings)
                 ruleSymbolColor = rule.symbolColor
                 ruleFolderColor = rule.folderColor
                 source = .rule(ruleName: rule.name)
             } else if SmartContentDetectionStore.isEnabled, let detectedSym = FolderTypeDetector.detectType(at: u) {
-                sym = detectedSym
+                sym = Self.smartDetectionGlyph(for: detectedSym, folderName: name, customMappings: customMappings)
                 source = .smartDetection(type: Self.smartDetectionTypeDescription(for: detectedSym))
             } else if let customSym = customMappings[name.lowercased()] {
-                sym = customSym
+                sym = Self.glyphForCurrentStyle(folderName: name, proposedGlyph: customSym, customMappings: customMappings)
                 source = .customMapping
             } else {
                 sym = Self.localGlyph(for: name, customMappings: customMappings)
@@ -953,6 +937,90 @@ final class IconicViewModel: ObservableObject {
             if item.originalIcon == nil {
                 item.originalIcon = originalLookup[item.id]
             }
+        }
+    }
+
+    /// Re-attempts matching for a single failed/unmapped item using the current
+    /// matching mode (AI or local). Used by the row-level retry button.
+    func retryItem(_ item: FolderItem) {
+        let name = item.url.lastPathComponent
+        let custom = mappings.dictionary
+        let url = item.url
+
+        Task { @MainActor in
+            var newSymbol: String?
+            var newSource: MatchSource = .localDictionary
+            var errorMessage: String?
+
+            // Mirror the scan-time priority: rules → smart detection → custom mappings → AI/local.
+            if let rule = rulesStore?.firstMatch(for: name) {
+                newSymbol = Self.glyphForCurrentStyle(folderName: name, proposedGlyph: rule.symbol, customMappings: custom)
+                newSource = .rule(ruleName: rule.name)
+            } else if SmartContentDetectionStore.isEnabled, let detectedSym = FolderTypeDetector.detectType(at: url) {
+                newSymbol = Self.smartDetectionGlyph(for: detectedSym, folderName: name, customMappings: custom)
+                newSource = .smartDetection(type: Self.smartDetectionTypeDescription(for: detectedSym))
+            } else if let customSym = custom[name.lowercased()] {
+                newSymbol = Self.glyphForCurrentStyle(folderName: name, proposedGlyph: customSym, customMappings: custom)
+                newSource = .customMapping
+            } else if matchingMode == .ai, let apiKey = SettingsViewModel.getAPIKeyIfEnabled() {
+                do {
+                    let learningExamples = learningStore?.getAllExamples(limit: 20)
+                    let matches = try await GeminiService.matchFolders(
+                        [name],
+                        apiKey: apiKey,
+                        style: IconStyleStore.current,
+                        learningExamples: learningExamples,
+                        contentAnalysis: nil
+                    )
+                    if let match = matches[name], match.confidence >= 0.6, Self.isValidAIGlyph(match.symbol) {
+                        newSymbol = match.symbol
+                        newSource = .aiSuggestion(confidence: match.confidence)
+                    } else {
+                        newSymbol = Self.localGlyph(for: name, customMappings: custom)
+                        newSource = .localDictionary
+                    }
+                } catch {
+                    errorMessage = "Retry failed: \(error.localizedDescription)"
+                }
+            } else {
+                newSymbol = Self.localGlyph(for: name, customMappings: custom)
+                newSource = .localDictionary
+            }
+
+            if let sym = newSymbol {
+                item.symbolNames = [sym]
+                item.matchSource = newSource
+                item.status = .pending
+                rerenderPreservingMatchSource(item)
+            } else if let msg = errorMessage {
+                item.status = .failed(msg)
+            }
+        }
+    }
+
+    /// Like `rerender` but doesn't flip matchSource to .userEdited — used after
+    /// programmatic re-matching where the source should reflect the matcher used.
+    private func rerenderPreservingMatchSource(_ item: FolderItem) {
+        let syms = item.symbolNames
+        let color = item.symbolColor ?? ColorPreferences.getDefaultColor()
+        let folderTint = item.folderColor
+        let opacity = item.symbolOpacity
+        let scale = item.symbolScale
+        let offsetY = item.symbolOffsetY
+        let gradientEnd = item.symbolGradientEnd
+        let customImage = item.customImage
+        Task.detached(priority: .userInitiated) {
+            let img = IconRenderer.makeIcon(
+                symbolNames: syms,
+                tint: color,
+                folderTint: folderTint,
+                opacity: opacity,
+                scale: scale,
+                offsetY: offsetY,
+                gradientEnd: gradientEnd,
+                customImage: customImage
+            )
+            await MainActor.run { item.preview = img }
         }
     }
 
@@ -1334,6 +1402,11 @@ final class IconicViewModel: ObservableObject {
 
     // MARK: - Conflict detection
 
+    /// Count of items whose folders already have a custom icon that applying would overwrite.
+    var conflictCount: Int {
+        foldersWithExistingIcons.count
+    }
+
     /// Returns folders in `batchTargets` that already have a custom icon set
     /// (and weren't applied/restored by Iconic in this session).
     var foldersWithExistingIcons: [FolderItem] {
@@ -1425,16 +1498,9 @@ final class IconicViewModel: ObservableObject {
         // Add to items list
         items.append(item)
 
-        // Auto-apply if rule matched — but respect dry run mode so the user's
-        // preview workflow isn't broken by background folder monitoring.
         if shouldAutoApply {
-            if isDryRunMode {
-                autoApplyMatchedIDs.insert(item.id)
-                showToast("New folder '\(name)' matched rules (preview mode)", icon: "folder.badge.plus", type: .info)
-            } else {
-                apply(item)
-                showToast("Auto-applied icon to '\(name)'", icon: "folder.badge.plus", type: .success)
-            }
+            apply(item)
+            showToast("Auto-applied icon to '\(name)'", icon: "folder.badge.plus", type: .success)
         }
     }
 }

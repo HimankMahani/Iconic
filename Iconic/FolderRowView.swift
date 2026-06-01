@@ -39,6 +39,7 @@ struct FolderRowView: View {
     @State private var showingSymbolBrowser = false
     @State private var showingEmojiBrowser = false
     @State private var newLayerSymbol: String = ""
+    @FocusState private var symbolFieldFocused: Bool
 
     var body: some View {
         HStack(spacing: 12) {
@@ -63,6 +64,8 @@ struct FolderRowView: View {
 
             statusBadge
 
+            colorSwatches
+
             if shouldShowRetry {
                 Button {
                     onRetry()
@@ -76,11 +79,14 @@ struct FolderRowView: View {
             Button {
                 draftSymbol = item.symbolName
                 showingSymbolEditor = true
+                DispatchQueue.main.async { symbolFieldFocused = true }
             } label: {
                 Image(systemName: "pencil")
             }
             .buttonStyle(.borderless)
-            .help("Edit SF Symbol for this folder")
+            .help(item.isUnassigned
+                  ? "Pick a symbol for this folder"
+                  : "Edit SF Symbol for this folder")
             .popover(isPresented: $showingSymbolEditor, arrowEdge: .bottom) {
                 symbolEditor
             }
@@ -273,6 +279,42 @@ struct FolderRowView: View {
         return name == "folder" || name == "folder.fill"
     }
 
+    /// Two small color circles showing the row's current folder + symbol
+    /// colors. Click either one to open the adjust popover, which is where
+    /// the color pickers live.
+    @ViewBuilder
+    private var colorSwatches: some View {
+        HStack(spacing: 4) {
+            colorSwatch(color: item.folderColor, help: "Folder color")
+            colorSwatch(color: item.symbolColor, help: "Symbol color")
+        }
+        .help("Click to change folder or symbol color")
+    }
+
+    @ViewBuilder
+    private func colorSwatch(color: NSColor?, help: String) -> some View {
+        Button {
+            showingAdjustPopover = true
+        } label: {
+            Circle()
+                .fill(swatchFill(color: color))
+                .frame(width: 12, height: 12)
+                .overlay(
+                    Circle()
+                        .stroke(Color.primary.opacity(0.25), lineWidth: 0.5)
+                )
+        }
+        .buttonStyle(.plain)
+        .help(color == nil ? "\(help) (default)" : help)
+    }
+
+    private func swatchFill(color: NSColor?) -> Color {
+        if let ns = color {
+            return Color(nsColor: ns)
+        }
+        return Color.gray.opacity(0.25)
+    }
+
     @ViewBuilder
     private var statusBadge: some View {
         switch item.status {
@@ -315,57 +357,24 @@ struct FolderRowView: View {
 
     private var symbolEditor: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(IconStyleStore.current == .emoji ? "Emoji" : "SF Symbol name")
+            // Header adapts to the row state. Unassigned rows get a clear
+            // call-to-action ("Pick a symbol…") instead of the neutral
+            // "SF Symbol name" label.
+            Text(symbolEditorTitle)
                 .font(.headline)
 
-            // Suggestions section
-            let suggestions = IconStyleStore.current == .sfSymbol ? suggestionsStore.getSuggestions(for: item.displayName) : []
-            if !suggestions.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Suggestions")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    HStack(spacing: 6) {
-                        ForEach(suggestions, id: \.self) { symbol in
-                            Button {
-                                draftSymbol = symbol
-                            } label: {
-                                HStack(spacing: 4) {
-                                    glyphView(symbol, size: 12)
-                                    Text(symbol)
-                                        .font(.caption2)
-                                }
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                        }
-                    }
+            if item.isUnassigned {
+                // Unassigned: text field + browser up top so the user can
+                // act immediately, suggestions below.
+                symbolInputRow
+                browserButton
+                if !suggestions.isEmpty {
+                    suggestionsSection
                 }
-            }
-
-            TextField(IconStyleStore.current == .emoji ? "e.g. 🎵" : "e.g. music.note", text: $draftSymbol)
-                .textFieldStyle(.roundedBorder)
-                .frame(width: 240)
-                .onSubmit { commit() }
-
-            if IconStyleStore.current == .sfSymbol {
-                Button {
-                    showingSymbolBrowser = true
-                } label: {
-                    Label("Browse Symbols…", systemImage: "square.grid.3x3")
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
             } else {
-                Button {
-                    showingEmojiBrowser = true
-                } label: {
-                    Label("Browse Emoji…", systemImage: "face.smiling")
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
+                suggestionsSection
+                symbolInputRow
+                browserButton
             }
 
             HStack {
@@ -396,6 +405,75 @@ struct FolderRowView: View {
             EmojiBrowserView { emoji in
                 draftSymbol = emoji
                 showingEmojiBrowser = false
+            }
+        }
+    }
+
+    private var symbolEditorTitle: String {
+        if item.isUnassigned {
+            return "Pick a symbol for this folder"
+        }
+        return IconStyleStore.current == .emoji ? "Emoji" : "SF Symbol name"
+    }
+
+    private var suggestions: [String] {
+        IconStyleStore.current == .sfSymbol ? suggestionsStore.getSuggestions(for: item.displayName) : []
+    }
+
+    @ViewBuilder
+    private var symbolInputRow: some View {
+        TextField(IconStyleStore.current == .emoji ? "e.g. 🎵" : "e.g. music.note", text: $draftSymbol)
+            .textFieldStyle(.roundedBorder)
+            .frame(width: 240)
+            .focused($symbolFieldFocused)
+            .onSubmit { commit() }
+    }
+
+    @ViewBuilder
+    private var browserButton: some View {
+        if IconStyleStore.current == .sfSymbol {
+            Button {
+                showingSymbolBrowser = true
+            } label: {
+                Label("Browse Symbols…", systemImage: "square.grid.3x3")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        } else {
+            Button {
+                showingEmojiBrowser = true
+            } label: {
+                Label("Browse Emoji…", systemImage: "face.smiling")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        }
+    }
+
+    @ViewBuilder
+    private var suggestionsSection: some View {
+        if !suggestions.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Suggestions")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    ForEach(suggestions, id: \.self) { symbol in
+                        Button {
+                            draftSymbol = symbol
+                        } label: {
+                            HStack(spacing: 4) {
+                                glyphView(symbol, size: 12)
+                                Text(symbol)
+                                    .font(.caption2)
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                }
             }
         }
     }
@@ -512,6 +590,10 @@ struct FolderRowView: View {
 
             Divider()
 
+            colorsSection
+
+            Divider()
+
             HStack {
                 Text("Gradient")
                 Toggle("", isOn: Binding(
@@ -569,6 +651,8 @@ struct FolderRowView: View {
                     item.symbolOffsetY = 0.0
                     item.symbolGradientEnd = nil
                     item.customImage = nil
+                    onColorChange(nil)
+                    onFolderColorChange(nil)
                     onAdjust()
                 }
                 Spacer()
@@ -578,6 +662,83 @@ struct FolderRowView: View {
         }
         .padding(14)
         .frame(width: 320)
+    }
+
+    /// Folder + symbol color overrides. SwiftUI's macOS ColorPicker doesn't
+    /// support a nil state natively, so we use a separate ✕ button to clear
+    /// the override (which lets the global default / auto-color chain take
+    /// over again). When the color is nil the swatch shows a neutral
+    /// placeholder instead of an actual color.
+    @ViewBuilder
+    private var colorsSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            colorRow(
+                label: "Folder Color",
+                color: Binding(
+                    get: { Color(item.folderColor ?? defaultFolderSwatchColor) },
+                    set: { newColor in
+                        let ns = NSColor(newColor)
+                        onFolderColorChange(ns)
+                    }
+                ),
+                isSet: item.folderColor != nil,
+                onClear: { onFolderColorChange(nil) }
+            )
+            colorRow(
+                label: "Symbol Color",
+                color: Binding(
+                    get: { Color(item.symbolColor ?? defaultSymbolSwatchColor) },
+                    set: { newColor in
+                        let ns = NSColor(newColor)
+                        onColorChange(ns)
+                    }
+                ),
+                isSet: item.symbolColor != nil,
+                onClear: { onColorChange(nil) }
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func colorRow(
+        label: String,
+        color: Binding<Color>,
+        isSet: Bool,
+        onClear: @escaping () -> Void
+    ) -> some View {
+        HStack(spacing: 8) {
+            Text(label)
+                .frame(width: 90, alignment: .leading)
+            ColorPicker("", selection: color, supportsOpacity: false)
+                .labelsHidden()
+                .frame(width: 28)
+            if isSet {
+                Button {
+                    onClear()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Reset to default")
+            } else {
+                Text("default")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+    }
+
+    private var defaultFolderSwatchColor: NSColor {
+        // Match the system folder's blue so the swatch looks meaningful
+        // before the user touches it.
+        NSColor(calibratedRed: 0.30, green: 0.55, blue: 0.95, alpha: 1.0)
+    }
+
+    private var defaultSymbolSwatchColor: NSColor {
+        // Default symbol tint used by the renderer when nothing is set.
+        .white
     }
 
     private func chooseCustomImage() {

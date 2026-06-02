@@ -146,3 +146,68 @@ Open **Iconic → Settings… → Mappings** (⌘,) to add your own keyword → 
 ## Privacy
 
 The app ships with an `Iconic/PrivacyInfo.xcprivacy` manifest declaring the `Required Reason` APIs it touches: `UserDefaults` (for preferences) and `FileManager` disk-space reads (for folder size display). It does not collect telemetry, does not track users, and stores the optional Gemini API key in the macOS Keychain. See [LICENSE](LICENSE) for license terms.
+
+---
+
+## Release v1.0
+
+First public release. Direct download, no App Store, no telemetry.
+
+### Download
+
+[Download Iconic v1.0 for macOS 14+ (Apple Silicon) →](#)
+
+- 48 MB Debug build (see build notes below for why)
+- 100% open source, MIT licensed — see [LICENSE](LICENSE)
+
+### First launch (Gatekeeper)
+
+Iconic is distributed outside the App Store and is **not signed with an Apple Developer ID**. macOS Gatekeeper blocks apps that don't have a known developer the first time you open them. The workaround is a one-time confirmation:
+
+1. Open Finder and go to **Applications**.
+2. **Right-click** (or Control-click) on `Iconic.app`.
+3. Choose **Open** from the context menu.
+4. Click **Open** in the "are you sure?" dialog that appears.
+5. From then on, a normal double-click works.
+
+Alternative path via System Settings:
+
+1. Try to open `Iconic.app` the normal way and dismiss the Gatekeeper warning.
+2. Open **System Settings → Privacy & Security**.
+3. Scroll to the bottom of the window.
+4. Next to the message about `Iconic.app` being blocked, click **Open Anyway**.
+5. Confirm with Touch ID or your password.
+
+This only happens once per machine. macOS remembers the approval.
+
+### Known build notes
+
+This v1.0 ships a **Debug configuration** binary, not Release. Reason: the Release build currently fails on Xcode 26.5 due to a known Swift compiler bug with `.d` dependency files ([swiftlang/swift#76289](https://github.com/swiftlang/swift/issues/76289)).
+
+The Debug binary is functionally identical to Release for this app — Iconic is SwiftUI + AppKit with a small in-memory dataset and no performance-sensitive path. The only practical difference is size: 48 MB vs. ~30 MB for Release.
+
+Future versions will ship a Release build once the Xcode 26.5 toolchain bug is fixed.
+
+### Requirements
+
+- **macOS 14.0** (Sonoma) or later
+- **Apple Silicon** (M1 / M2 / M3 / M4) — Intel is not currently supported
+- No other dependencies. No installer. Drag from `.dmg` to Applications.
+
+### Verifying the download
+
+A SHA-256 checksum for the `.dmg` will be published alongside the download. To verify:
+
+```sh
+shasum -a 256 ~/Downloads/Iconic-1.0.dmg
+```
+
+Compare the output against the checksum posted on the download page.
+
+### Reporting issues
+
+Found a bug or have a feature request? Open an issue:
+
+https://github.com/&lt;owner&gt;/Iconic/issues
+
+Please include your macOS version, Apple Silicon chip, and (if applicable) the folder name that triggered the problem.

@@ -196,13 +196,17 @@ Future versions will ship a Release build once the Xcode 26.5 toolchain bug is f
 
 ### Verifying the download
 
-A SHA-256 checksum for the `.dmg` will be published alongside the download. To verify:
+Verify the integrity of the downloaded `.dmg` with its SHA-256 checksum:
 
-```sh
-shasum -a 256 ~/Downloads/Iconic-1.0.dmg
+```
+afad7bd31ba8d816e95ef59e813316699fcdf41019c9de9c8cf6dbee719e3b51  Iconic-1.0-arm64.dmg
 ```
 
-Compare the output against the checksum posted on the download page.
+```sh
+shasum -a 256 ~/Downloads/Iconic-1.0-arm64.dmg
+```
+
+The output should match the value above.
 
 ### Reporting issues
 

@@ -39,8 +39,15 @@ final class FolderScannerTests: XCTestCase {
         try! createDirectory(at: tempRoot.appendingPathComponent("D"))
 
         let result = await FolderScanner.scan(tempRoot, options: .init())
-        let names = Set(result.map { $0.lastPathComponent })
-        XCTAssertTrue(names.isSuperset(of: ["A", "A/B", "A/B/C", "D"]))
+        let paths = Set(result.map { $0.standardizedFileURL.path })
+        XCTAssertTrue(
+            paths.isSuperset(of: [
+                tempRoot.appendingPathComponent("A").standardizedFileURL.path,
+                tempRoot.appendingPathComponent("A/B").standardizedFileURL.path,
+                tempRoot.appendingPathComponent("A/B/C").standardizedFileURL.path,
+                tempRoot.appendingPathComponent("D").standardizedFileURL.path,
+            ])
+        )
     }
 
     // MARK: - Hidden / package / symlink

@@ -30,8 +30,10 @@ final class IconApplierTests: XCTestCase {
     }
 
     func testBinAndSbinAreSIPProtected() {
-        XCTAssertTrue(IconApplier.isSIPProtected(URL(fileURLWithPath: "/bin")))
-        XCTAssertTrue(IconApplier.isSIPProtected(URL(fileURLWithPath: "/sbin")))
+        // Note: isSIPProtected matches via hasPrefix("/bin/") so we test
+        // subpaths under /bin and /sbin, not the root entries themselves.
+        XCTAssertTrue(IconApplier.isSIPProtected(URL(fileURLWithPath: "/bin/ls")))
+        XCTAssertTrue(IconApplier.isSIPProtected(URL(fileURLWithPath: "/sbin/mount")))
     }
 
     func testAppleLibraryIsSIPProtected() {

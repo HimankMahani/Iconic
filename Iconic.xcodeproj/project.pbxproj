@@ -377,6 +377,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.himank.IconicTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Iconic.app/Contents/MacOS/Iconic";
 			};
 			name = Debug;
@@ -395,6 +396,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.himank.IconicTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Iconic.app/Contents/MacOS/Iconic";
 			};
 			name = Release;

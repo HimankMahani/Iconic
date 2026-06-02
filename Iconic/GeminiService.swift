@@ -8,8 +8,11 @@
 //
 
 import Foundation
+import os.log
 
 struct GeminiService {
+
+    private static let log = Logger(subsystem: "com.himank.Iconic", category: "GeminiService")
 
     // MARK: - Cache
 
@@ -216,7 +219,7 @@ struct GeminiService {
             // Convert array to dictionary with lowercased folder names as keys
             return Dictionary(uniqueKeysWithValues: cacheArray.map { ($0.folderName.lowercased(), $0) })
         } catch {
-            print("Failed to load cache: \(error)")
+            log.error("Failed to load cache: \(error.localizedDescription, privacy: .public)")
             return [:]
         }
     }
@@ -247,7 +250,7 @@ struct GeminiService {
             let data = try encoder.encode(cacheArray)
             UserDefaults.standard.set(data, forKey: userDefaultsCacheKey(for: style))
         } catch {
-            print("Failed to save cache: \(error)")
+            log.error("Failed to save cache: \(error.localizedDescription, privacy: .public)")
         }
     }
 

@@ -9,6 +9,7 @@
 import Foundation
 import AppKit
 import UserNotifications
+import os.log
 
 extension Notification.Name {
     static let iconicMonitoredLocationsChanged = Notification.Name("iconic.monitoredLocationsChanged")
@@ -17,6 +18,7 @@ extension Notification.Name {
 @MainActor
 final class BackgroundFolderMonitor {
 
+    private let log = Logger(subsystem: "com.himank.Iconic", category: "BackgroundFolderMonitor")
     private var watchers: [FolderWatcher] = []
     private var locationObserver: NSObjectProtocol?
     private let rulesStore: RulesStore
@@ -141,7 +143,7 @@ final class BackgroundFolderMonitor {
             await showNotification(folderName: name, symbol: matchResult.symbol, source: matchResult.source)
 
         } catch {
-            print("Failed to apply icon to \(name): \(error)")
+            log.error("Failed to apply icon to \(name, privacy: .public): \(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -250,7 +252,7 @@ final class BackgroundFolderMonitor {
                     )
                 }
             } catch {
-                print("AI matching failed for \(name): \(error.localizedDescription)")
+                log.error("AI matching failed for \(name, privacy: .public): \(error.localizedDescription, privacy: .public)")
             }
         }
 

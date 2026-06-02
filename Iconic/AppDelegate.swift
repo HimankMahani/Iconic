@@ -9,6 +9,7 @@ import AppKit
 import SwiftUI
 import UserNotifications
 import Combine
+import os.log
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
@@ -18,6 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
     private var mainWindow: NSWindow?
     private var preferencesWindow: NSWindow?
+    private let log = Logger(subsystem: "com.himank.Iconic", category: "AppDelegate")
 
     override init() {
         super.init()
@@ -26,9 +28,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Request notification permissions
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { [log] granted, error in
             if let error = error {
-                print("Notification permission error: \(error)")
+                log.error("Notification permission error: \(error.localizedDescription, privacy: .public)")
             }
         }
 

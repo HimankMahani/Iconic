@@ -1,0 +1,53 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Xcode
+build/
+DerivedData/
+*.xcuserstate
+*.xcuserdatad/
+xcuserdata/
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
+*.xcscmblueprint
+*.xccheckout
+
+# Xcode patch
+*.xcodeproj/*.plist.orig
+
+# Archives & build artifacts
+*.xcarchive
+*.dSYM.zip
+*.dSYM
+
+# Distribution
+*.dmg
+*.zip
+*.pkg
+*.app/
+
+# Swift Package Manager
+.swiftpm/
+.build/
+Package.resolved
+
+# Development tooling (not part of shipped app)
+.agents/
+skills-lock.json
+.claude/
+.aider*
+
+# Logs
+*.log
+logs/
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo

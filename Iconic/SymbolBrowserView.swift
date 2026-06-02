@@ -426,7 +426,6 @@ private struct EmojiCell: View {
 }
 
 #Preview {
-    SymbolBrowserView { symbol in
-        print("Selected: \(symbol)")
+    SymbolBrowserView { _ in
     }
 }

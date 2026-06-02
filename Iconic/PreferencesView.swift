@@ -1655,7 +1655,7 @@ private struct PresetDocument: FileDocument {
         decoder.dateDecodingStrategy = .iso8601
         preset = try decoder.decode(Preset.self, from: data)
     }
-    
+
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]

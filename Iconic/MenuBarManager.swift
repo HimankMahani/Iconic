@@ -1,4 +1,5 @@
 //
+// SPDX-License-Identifier: MIT
 //  MenuBarManager.swift
 //  Iconic
 //

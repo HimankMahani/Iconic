@@ -1,4 +1,5 @@
 //
+// SPDX-License-Identifier: MIT
 //  FolderWatcher.swift
 //  Iconic
 //
@@ -10,7 +11,7 @@ import AppKit
 import os.log
 
 final class FolderWatcher {
-    private static let log = OSLog(subsystem: "com.app.Iconic", category: "FolderWatcher")
+    private static let log = OSLog(subsystem: "app.iconic.Iconic", category: "FolderWatcher")
 
     private var eventStream: FSEventStreamRef?
     private var callback: ((URL) -> Void)?

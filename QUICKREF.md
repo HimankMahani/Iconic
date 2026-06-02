@@ -5,7 +5,7 @@ Quick reference for common development tasks and troubleshooting.
 ## 🚀 Quick Start
 
 ```bash
-cd /Users/himank/Desktop/Iconic
+cd .
 open Iconic.xcodeproj
 # Press ⌘R to build and run
 ```

@@ -1,0 +1,17 @@
+//  Iconic.xcconfig
+//  Iconic
+//
+//  Project-wide build settings. Per-target overrides remain in the
+//  pbxproj. This file is referenced by the IconicTests target's
+//  Debug and Release build configurations.
+//
+
+// Swift
+SWIFT_VERSION = 5.0
+SWIFT_STRICT_CONCURRENCY = minimal
+
+// Platforms
+MACOSX_DEPLOYMENT_TARGET = 14.0
+
+// Localization (the project uses generated string catalogs)
+SWIFT_EMIT_LOC_STRINGS = YES

@@ -1,4 +1,5 @@
 //
+// SPDX-License-Identifier: MIT
 //  SymbolBrowserView.swift
 //  Iconic
 //

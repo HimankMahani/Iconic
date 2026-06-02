@@ -1,4 +1,5 @@
 //
+// SPDX-License-Identifier: MIT
 //  AppDelegate.swift
 //  Iconic
 //
@@ -19,7 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
     private var mainWindow: NSWindow?
     private var preferencesWindow: NSWindow?
-    private let log = Logger(subsystem: "com.himank.Iconic", category: "AppDelegate")
+    private let log = Logger(subsystem: "app.iconic.Iconic", category: "AppDelegate")
 
     override init() {
         super.init()

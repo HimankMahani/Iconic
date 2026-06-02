@@ -1,4 +1,5 @@
 //
+// SPDX-License-Identifier: MIT
 //  QuickLookPreviewRenderer.swift
 //  Iconic
 //

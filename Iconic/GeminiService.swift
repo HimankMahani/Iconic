@@ -1,4 +1,5 @@
 //
+// SPDX-License-Identifier: MIT
 //  GeminiService.swift
 //  Iconic
 //
@@ -12,7 +13,7 @@ import os.log
 
 struct GeminiService {
 
-    private static let log = Logger(subsystem: "com.himank.Iconic", category: "GeminiService")
+    private static let log = Logger(subsystem: "app.iconic.Iconic", category: "GeminiService")
 
     // MARK: - Cache
 

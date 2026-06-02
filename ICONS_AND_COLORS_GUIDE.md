@@ -214,7 +214,7 @@ Pattern: ^\d{4}-\d{2}$ → Symbol: calendar.badge.clock (matches "2024-05")
 **Extend the built-in palettes with your own colors**
 
 ### How to Add:
-1. Open `/Users/himank/Desktop/Iconic/Iconic/ColorPalette.swift`
+1. Open `Iconic/ColorPalette.swift`
 2. Find the palette you want to extend
 3. Add colors in hex format:
 

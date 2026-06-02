@@ -1,4 +1,5 @@
 //
+// SPDX-License-Identifier: MIT
 //  IconClipboard.swift
 //  Iconic
 //

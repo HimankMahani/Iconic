@@ -1,4 +1,5 @@
 //
+// SPDX-License-Identifier: MIT
 //  BackgroundFolderMonitor.swift
 //  Iconic
 //
@@ -18,7 +19,7 @@ extension Notification.Name {
 @MainActor
 final class BackgroundFolderMonitor {
 
-    private let log = Logger(subsystem: "com.himank.Iconic", category: "BackgroundFolderMonitor")
+    private let log = Logger(subsystem: "app.iconic.Iconic", category: "BackgroundFolderMonitor")
     private var watchers: [FolderWatcher] = []
     private var locationObserver: NSObjectProtocol?
     private let rulesStore: RulesStore

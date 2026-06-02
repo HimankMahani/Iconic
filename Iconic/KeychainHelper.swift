@@ -1,4 +1,5 @@
 //
+// SPDX-License-Identifier: MIT
 //  KeychainHelper.swift
 //  Iconic
 //
@@ -11,7 +12,7 @@ import Security
 
 enum KeychainHelper {
 
-    private static let service = "com.app.Iconic.gemini"
+    private static let service = "app.iconic.Iconic.gemini"
     private static let account = "gemini-api-key"
 
     enum KeychainError: LocalizedError {

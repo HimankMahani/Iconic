@@ -1,4 +1,5 @@
 //
+// SPDX-License-Identifier: MIT
 //  PresetsStore.swift
 //  Iconic
 //

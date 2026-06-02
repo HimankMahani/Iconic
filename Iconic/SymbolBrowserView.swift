@@ -250,50 +250,76 @@ struct EmojiBrowserView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var searchText = ""
 
-    private var filteredEmoji: [String] {
+    /// One emoji + pre-computed lowercase searchable text + Apple name.
+    /// We build this once so live filtering over 1907 entries stays snappy
+    /// and the "no query" list is alphabetically sorted by Apple name.
+    private struct EmojiEntry: Identifiable {
+        let emoji: String
+        let name: String
+        let searchKey: String
+        var id: String { emoji }
+    }
+
+    /// All emojis from Apple's catalog, with name + tags pre-joined into a
+    /// lowercase searchKey for fast live filtering. Sorted alphabetically
+    /// by Apple name so the no-query list is predictable.
+    private var allEmoji: [EmojiEntry] {
+        EmojiMetadata.allEmoji.map { emoji in
+            let name = EmojiMetadata.appleName[emoji] ?? emoji
+            let tags = EmojiMetadata.searchTags[emoji] ?? []
+            let searchKey = (name + " " + tags.joined(separator: " ")).lowercased()
+            return EmojiEntry(emoji: emoji, name: name, searchKey: searchKey)
+        }
+        .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private var filteredEmoji: [EmojiEntry] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let all = allEmoji
         guard !query.isEmpty else {
-            return Array(EmojiMetadata.allEmoji.prefix(240))
+            return all
+        }
+
+        // Direct paste of an actual emoji → return any emoji that contains
+        // the graphemes (covers multi-char sequences like 🇺🇸).
+        if query.isEmojiGlyph {
+            return all.filter { $0.emoji.contains(query) }
         }
 
         let tokens = query
             .split { !$0.isLetter && !$0.isNumber }
             .map(String.init)
 
-        if query.isEmojiGlyph {
-            return EmojiMetadata.allEmoji.filter { $0.contains(query) }
-        }
-
-        let ranked = EmojiMetadata.allEmoji.compactMap { emoji -> (emoji: String, score: Int)? in
-            let name = EmojiMetadata.appleName[emoji]?.lowercased() ?? ""
-            let tags = EmojiMetadata.searchTags[emoji] ?? []
+        let ranked = all.compactMap { entry -> (entry: EmojiEntry, score: Int)? in
+            let name = entry.name.lowercased()
+            let tags = EmojiMetadata.searchTags[entry.emoji] ?? []
             let tagText = tags.joined(separator: " ").lowercased()
             var score = 0
 
             if name == query { score += 120 }
-            if tags.contains(query) { score += 100 }
+            if tags.contains(where: { $0.lowercased() == query }) { score += 100 }
             if name.hasPrefix(query) { score += 80 }
             if name.contains(query) { score += 55 }
             if tagText.contains(query) { score += 40 }
 
             for token in tokens {
                 if name.split(separator: " ").contains(Substring(token)) { score += 18 }
-                if tags.contains(token) { score += 18 }
+                if tags.contains(where: { $0.lowercased() == token }) { score += 18 }
                 if name.contains(token) { score += 8 }
                 if tagText.contains(token) { score += 8 }
             }
 
-            return score > 0 ? (emoji, score) : nil
+            return score > 0 ? (entry, score) : nil
         }
 
         return ranked
             .sorted {
                 if $0.score == $1.score {
-                    return emojiName($0.emoji) < emojiName($1.emoji)
+                    return $0.entry.name.localizedCaseInsensitiveCompare($1.entry.name) == .orderedAscending
                 }
                 return $0.score > $1.score
             }
-            .map(\.emoji)
+            .map(\.entry)
     }
 
     var body: some View {
@@ -338,9 +364,9 @@ struct EmojiBrowserView: View {
 
             ScrollView {
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 8), spacing: 8) {
-                    ForEach(filteredEmoji, id: \.self) { emoji in
-                        EmojiCell(emoji: emoji, name: emojiName(emoji)) {
-                            onSelect(emoji)
+                    ForEach(filteredEmoji) { entry in
+                        EmojiCell(emoji: entry.emoji, name: entry.name) {
+                            onSelect(entry.emoji)
                             dismiss()
                         }
                     }
@@ -359,10 +385,6 @@ struct EmojiBrowserView: View {
             .padding(12)
         }
         .frame(width: 640, height: 520)
-    }
-
-    private func emojiName(_ emoji: String) -> String {
-        EmojiMetadata.appleName[emoji] ?? emoji
     }
 }
 

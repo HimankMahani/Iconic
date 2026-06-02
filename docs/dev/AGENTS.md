@@ -181,7 +181,7 @@ IconApplier.apply() → NSWorkspace.setIcon()
 - `iconic.defaultSymbolColor` - Global default color (NSKeyedArchiver)
 
 ### Keychain
-- Service: `com.app.Iconic.gemini`
+- Service: `app.iconic.Iconic.gemini`
 - Account: `gemini-api-key`
 - Stores Gemini API key securely (never logged)
 
@@ -337,4 +337,4 @@ IconApplier.apply() → NSWorkspace.setIcon()
 
 **Last Updated**: 2026-05-30  
 **Build Status**: ✅ Compiles successfully  
-**Lines of Code**: ~3,500
+**Lines of Code**: ~25,900

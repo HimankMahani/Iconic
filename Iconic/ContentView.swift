@@ -416,31 +416,7 @@ struct ContentView: View {
                 .cornerRadius(6)
             }
 
-            recentsAndFavoritesMenu
-
-            Button {
-                showingBackups = true
-            } label: {
-                Image(systemName: "clock.arrow.2.circlepath")
-            }
-            .buttonStyle(.borderless)
-            .help("Backups")
-
-            Menu {
-                ForEach(IconMapExportFormat.allCases) { format in
-                    Button("Export as \(format.rawValue)") {
-                        exportFormat = format
-                        prepareExportDocument()
-                    }
-                }
-            } label: {
-                Image(systemName: "square.and.arrow.up")
-            }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help("Export icon map")
-            .disabled(vm.items.isEmpty)
+            headerOverflowMenu
 
             Button {
                 showingShortcutsHelp = true
@@ -549,6 +525,65 @@ struct ContentView: View {
             return
         }
         vm.adoptRoot(resolved.url)
+    }
+
+    /// Overflow menu that consolidates Recents, Favorites, Backups, and Export
+    /// into a single affordance. Keeps the header toolbar uncluttered.
+    private var headerOverflowMenu: some View {
+        Menu {
+            if !favoriteFolders.isEmpty {
+                Section("Favorites") {
+                    ForEach(favoriteFolders) { fav in
+                        Button(fav.effectiveName) { openFavorite(fav) }
+                    }
+                }
+            }
+            if !recentFolders.isEmpty {
+                Section("Recent") {
+                    ForEach(recentFolders.prefix(8)) { recent in
+                        Button(recent.displayName) { openRecent(recent) }
+                    }
+                }
+            }
+            if recentFolders.isEmpty && favoriteFolders.isEmpty {
+                Text("No recent folders yet")
+            }
+            if let root = vm.rootURL {
+                Divider()
+                if FavoritesStore.isFavorited(root) {
+                    Button("Remove Current from Favorites") {
+                        if let match = FavoritesStore.load().first(where: { fav in
+                            FavoritesStore.resolve(fav)?.url.path == root.path
+                        }) {
+                            FavoritesStore.remove(match.id)
+                            reloadFolderLists()
+                        }
+                    }
+                } else {
+                    Button("Add Current to Favorites") {
+                        FavoritesStore.add(root)
+                        reloadFolderLists()
+                    }
+                }
+            }
+            Divider()
+            Button("Backups…") { showingBackups = true }
+            Section("Export Icon Map") {
+                ForEach(IconMapExportFormat.allCases) { format in
+                    Button("Export as \(format.rawValue)") {
+                        exportFormat = format
+                        prepareExportDocument()
+                    }
+                    .disabled(vm.items.isEmpty)
+                }
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle")
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Recents, favorites, backups, export")
     }
 
     @ViewBuilder

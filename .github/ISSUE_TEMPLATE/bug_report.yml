@@ -1,0 +1,85 @@
+name: Bug Report
+description: Report broken behavior, crashes, or incorrect output
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the bug clearly and concisely.
+      placeholder: "When I open a folder with N subfolders, the app crashes on..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-expected
+    attributes:
+      label: What did you expect?
+      description: What was the expected behavior?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps-to-reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Minimal, ordered steps to reproduce the bug.
+      placeholder: "1. Open Iconic\n2. Click ...\n3. Observe ..."
+    validations:
+      required: true
+
+  - type: input
+    id: macos-version
+    attributes:
+      label: macOS version
+      description: The exact macOS build, obtainable via `About This Mac`.
+      placeholder: "e.g. macOS 15.4 (24E5085f)"
+    validations:
+      required: true
+
+  - type: input
+    id: xcode-version
+    attributes:
+      label: Xcode version
+      description: The Xcode version used to build, if relevant.
+      placeholder: "e.g. Xcode 16.4 (16F6)"
+
+  - type: input
+    id: iconic-version
+    attributes:
+      label: Iconic version
+      description: The Iconic build (visible in the Settings tab or About window).
+      placeholder: "1.0.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: ai-mode
+    attributes:
+      label: AI mode
+      description: Is the experimental AI (Gemini) mode enabled or disabled?
+      options:
+        - label: Enabled (Gemini)
+        - label: Disabled (Local only)
+
+  - type: textarea
+    id: screenshots-logs
+    attributes:
+      label: Screenshots / logs
+      description: Paste crash logs, console output, or add screenshots. Wrap console output in triple backticks.
+      render: shell
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      description: Please confirm the following before submitting.
+      options:
+        - label: I searched existing issues
+          required: true
+        - label: I'm on the latest release
+          required: true
+        - label: I can reproduce this bug on the latest release
+        - label: This bug is specific to Iconic (not a system-wide issue)

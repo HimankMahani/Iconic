@@ -1,0 +1,37 @@
+name: Feature Request
+description: Suggest a new feature or improvement
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What pain point or limitation does this address? Why is it worth solving?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: Proposed solution
+      description: Describe the desired behavior, UX, or API. Mockups, ASCII sketches, or references are welcome.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches you've thought about, and why you prefer the proposed solution.
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope
+      description: Approximate size of the change.
+      options:
+        - label: Small (single file)
+        - label: Medium (a few files)
+        - label: Large (cross-cutting)

@@ -1,0 +1,6 @@
+# Default: any change requires the maintainer's review
+*                               @HimankMahani
+
+# Generated metadata is auto-regenerated; reviews are not required
+/Iconic/Generated/              @HimankMahani
+/Scripts/extract_*.swift        @HimankMahani

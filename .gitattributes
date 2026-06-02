@@ -1,0 +1,26 @@
+# Normalize line endings on checkout (text files get LF, binary stays binary)
+* text=auto eol=lf
+
+# Swift source
+*.swift text eol=lf
+
+# Markdown (preserve two-space line breaks; see .editorconfig)
+*.md text eol=lf
+
+# Shell scripts
+*.sh text eol=lf
+
+# YAML / JSON
+*.{yml,yaml,json} text eol=lf
+
+# Explicit binary declarations
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.icns binary
+*.pdf binary
+*.zip binary
+*.dmg binary
+*.xcassets/Contents.json text eol=lf

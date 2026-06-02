@@ -30,6 +30,7 @@ struct FolderRowView: View {
     let templates: [IconTemplate]
     let onApplyTemplate: (IconTemplate) -> Void
     let onShowComparison: () -> Void
+    let onQuickLook: () -> Void
     let onRetry: () -> Void
 
     @State private var draftSymbol: String = ""
@@ -130,6 +131,8 @@ struct FolderRowView: View {
             }
         }
         Button("Compare Before/After") { onShowComparison() }
+        Button("Quick Look Preview") { onQuickLook() }
+            .disabled(item.preview == nil)
         Button("Import Current Finder Icon") { importFinderIcon() }
         Button("Add to Exclude Patterns") { onAddExcludePattern() }
     }

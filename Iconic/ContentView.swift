@@ -5,6 +5,7 @@
 
 import SwiftUI
 import AppKit
+import QuickLook
 import UniformTypeIdentifiers
 
 struct ContentView: View {
@@ -29,6 +30,8 @@ struct ContentView: View {
     @State private var showingBackups = false
     @State private var newBackupName = ""
     @State private var comparisonItem: FolderItem? = nil
+    @State private var quickLookURL: URL?
+    @State private var quickLookURLs: [URL] = []
     @FocusState private var listFocused: Bool
 
     var body: some View {
@@ -104,7 +107,7 @@ struct ContentView: View {
             Text("This removes the custom icons Iconic applied and reverts to the system folder icon. You can re-apply them later.")
         }
         .alert(
-            "\(conflictedFolders.count) folder\(conflictedFolders.count == 1 ? "" : "s") already ha\(conflictedFolders.count == 1 ? "s" : "ve") a custom icon",
+            conflictAlertTitle,
             isPresented: $showingConflictAlert
         ) {
             Button("Overwrite All") {
@@ -169,11 +172,31 @@ struct ContentView: View {
         .sheet(item: $comparisonItem) { item in
             ComparisonView(item: item)
         }
+        .quickLookPreview($quickLookURL, in: quickLookURLs)
     }
 
     private func reloadFolderLists() {
         recentFolders = RecentFoldersStore.load()
         favoriteFolders = FavoritesStore.load()
+    }
+
+    /// Builds the Quick Look preview URLs for the current focus/selection and
+    /// opens the Quick Look panel. With a single item focused, shows that
+    /// item's preview. With multiple items selected, builds a list so the
+    /// user can cycle through them in the panel.
+    private func openQuickLookForSelection() {
+        let candidates: [FolderItem] = vm.selectedItemIDs.count > 1
+            ? vm.filteredItems.filter { vm.selectedItemIDs.contains($0.id) }
+            : (vm.focusedItem.map { [$0] } ?? [])
+
+        let urls = candidates.compactMap { QuickLookPreviewRenderer.makePreviewURL(for: $0) }
+        guard !urls.isEmpty else {
+            vm.showToast("No icon to preview", icon: "eye.slash", type: .info)
+            return
+        }
+
+        quickLookURLs = urls
+        quickLookURL = urls.first
     }
 
     @ViewBuilder
@@ -462,6 +485,13 @@ struct ContentView: View {
             .keyboardShortcut("o", modifiers: [.command])
         }
         .padding(12)
+    }
+
+    private var conflictAlertTitle: String {
+        let n = conflictedFolders.count
+        let plural = n == 1 ? "" : "s"
+        let has = n == 1 ? "has" : "have"
+        return "\(n) folder\(plural) already \(has) a custom icon"
     }
 
     private var recentsAndFavoritesMenu: some View {
@@ -758,6 +788,10 @@ struct ContentView: View {
                         onShowComparison: {
                             comparisonItem = item
                         },
+                        onQuickLook: {
+                            vm.selectOnly(item)
+                            openQuickLookForSelection()
+                        },
                         onRetry: {
                             vm.retryItem(item)
                         }
@@ -822,7 +856,8 @@ struct ContentView: View {
             return .ignored
         }
         .onKeyPress(.space) {
-            return .ignored
+            openQuickLookForSelection()
+            return quickLookURL == nil ? .ignored : .handled
         }
         }
     }

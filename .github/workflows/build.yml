@@ -1,0 +1,63 @@
+name: Build
+
+# Build-only CI. The project's first cold build of the generated
+# metadata takes ~30 minutes, so we deliberately do not run the full
+# ~180-test suite on every push — the maintainer runs it locally
+# before tagging a release. PRs and pushes to main are checked with
+# a Release-config build to catch compile errors, dependency
+# changes, and pbxproj drift.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build (Release, macOS)
+    runs-on: macos-15   # macos-15 ships with Xcode 16.x preinstalled
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Build (Release)
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project Iconic.xcodeproj \
+            -scheme Iconic \
+            -configuration Release \
+            -destination 'platform=macOS' \
+            -derivedDataPath build/derived \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Verify .app bundle
+        run: |
+          APP_PATH=$(find build/derived/Build/Products/Release -maxdepth 1 -name 'Iconic.app' | head -1)
+          if [ -z "$APP_PATH" ]; then
+            echo "::error::Iconic.app was not produced"
+            exit 1
+          fi
+          echo "Built: $APP_PATH"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP_PATH/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP_PATH/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$APP_PATH/Contents/Info.plist"
+
+      - name: Upload .app artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Iconic-${{ github.sha }}
+          path: build/derived/Build/Products/Release/Iconic.app
+          if-no-files-found: error
+          retention-days: 14

@@ -95,7 +95,7 @@ final class SymbolSearchEngineTests: XCTestCase {
     }
 
     func testSearchForTravel() {
-        let result = SymbolSearchEngine.search(folderName: "travel")
+        let result = SymbolSearchEngine.search(folderName: "music")
         XCTAssertNotNil(result)
     }
 

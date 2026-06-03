@@ -175,9 +175,9 @@ final class IconicUndoManager: ObservableObject {
         case .restoreSingle:
             return "Undo: Restored 1 icon"
         case .applyMultiple(let states):
-            return "Undo: Applied \(states.count) icons"
+            return "Undo: Applied \(states.count) icon\(states.count == 1 ? "" : "s")"
         case .restoreMultiple(let states):
-            return "Undo: Restored \(states.count) icons"
+            return "Undo: Restored \(states.count) icon\(states.count == 1 ? "" : "s")"
         }
     }
 }

@@ -8,7 +8,7 @@ Pretty up your folders. Iconic scans a directory tree and assigns each subfolder
 a custom icon — composited from the default macOS folder graphic plus a
 matching SF Symbol — based on the folder's name.
 
-![Iconic main window](docs/screenshots/main-window.png)
+![Iconic main window](https://raw.githubusercontent.com/HimankMahani/Iconic/main/docs/screenshots/main-window.png)
 
 ## Why Iconic?
 

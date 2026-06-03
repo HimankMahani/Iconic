@@ -99,6 +99,7 @@ struct OnboardingView: View {
             Image(systemName: "folder.badge.gearshape")
                 .font(.system(size: 64))
                 .foregroundStyle(.blue)
+                .accessibilityHidden(true)
 
             VStack(spacing: 8) {
                 Text("Welcome to Iconic")
@@ -117,6 +118,7 @@ struct OnboardingView: View {
                 Image(systemName: "arrow.right")
                     .font(.title2)
                     .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
                 folderPreview(label: "After", overlay: "music.note", isEmoji: false, tint: .blue)
             }
 
@@ -311,6 +313,7 @@ struct OnboardingView: View {
                 Image(systemName: "folder.fill")
                     .font(.system(size: 52))
                     .foregroundStyle(tint)
+                    .accessibilityHidden(true)
                 if let overlay {
                     if isEmoji {
                         Text(overlay)
@@ -321,6 +324,7 @@ struct OnboardingView: View {
                             .font(.system(size: 20))
                             .foregroundStyle(.white)
                             .offset(y: 5)
+                            .accessibilityHidden(true)
                     }
                 }
             }
@@ -336,6 +340,7 @@ struct OnboardingView: View {
                 .font(.title2)
                 .foregroundStyle(tint)
                 .frame(width: 32)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(.headline)
@@ -363,6 +368,7 @@ struct OnboardingView: View {
                     .font(.title2)
                     .foregroundStyle(color)
                     .frame(width: 40)
+                    .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title)
@@ -379,6 +385,7 @@ struct OnboardingView: View {
                 if selectedMode == mode {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(.green)
+                        .accessibilityHidden(true)
                 }
             }
             .padding(12)
@@ -405,6 +412,7 @@ struct OnboardingView: View {
                     Image(systemName: "folder.fill")
                         .font(.system(size: 50))
                         .foregroundStyle(.blue)
+                        .accessibilityHidden(true)
                     if useEmojiPreview {
                         Text(previewSymbol)
                             .font(.system(size: 25))
@@ -414,6 +422,7 @@ struct OnboardingView: View {
                             .font(.system(size: 19))
                             .foregroundStyle(.white)
                             .offset(y: 5)
+                            .accessibilityHidden(true)
                     }
                 }
 

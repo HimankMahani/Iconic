@@ -83,6 +83,7 @@ struct KeyboardShortcutsView: View {
                 Image(systemName: "keyboard")
                     .font(.title2)
                     .foregroundStyle(.tint)
+                    .accessibilityHidden(true)
                 Text("Keyboard Shortcuts")
                     .font(.title2)
                     .fontWeight(.semibold)
@@ -93,6 +94,7 @@ struct KeyboardShortcutsView: View {
                     Image(systemName: "xmark.circle.fill")
                         .font(.title3)
                         .foregroundStyle(.secondary)
+                        .accessibilityLabel("Close")
                 }
                 .buttonStyle(.plain)
                 .keyboardShortcut(.cancelAction)
@@ -105,6 +107,7 @@ struct KeyboardShortcutsView: View {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
                 TextField("Search shortcuts...", text: $searchText)
                     .textFieldStyle(.plain)
                 if !searchText.isEmpty {
@@ -113,6 +116,7 @@ struct KeyboardShortcutsView: View {
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundStyle(.secondary)
+                            .accessibilityLabel("Clear search")
                     }
                     .buttonStyle(.plain)
                 }
@@ -171,6 +175,7 @@ struct KeyboardShortcutsView: View {
                             Image(systemName: "magnifyingglass")
                                 .font(.largeTitle)
                                 .foregroundStyle(.secondary)
+                                .accessibilityHidden(true)
                             Text("No shortcuts found")
                                 .font(.headline)
                                 .foregroundStyle(.secondary)

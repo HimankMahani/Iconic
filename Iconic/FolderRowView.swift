@@ -479,7 +479,6 @@ struct FolderRowView: View {
                 .monospacedDigit()
         }
     }
-    }
 
     @ViewBuilder
     private var layersSection: some View {

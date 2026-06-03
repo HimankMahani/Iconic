@@ -116,6 +116,7 @@ struct SymbolBrowserView: View {
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(.secondary)
+                        .accessibilityLabel("Close")
                 }
                 .buttonStyle(.plain)
             }
@@ -127,6 +128,7 @@ struct SymbolBrowserView: View {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
                 TextField("Search symbols...", text: $searchText)
                     .textFieldStyle(.plain)
                 if !searchText.isEmpty {
@@ -135,6 +137,7 @@ struct SymbolBrowserView: View {
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundStyle(.secondary)
+                            .accessibilityLabel("Clear search")
                     }
                     .buttonStyle(.plain)
                 }
@@ -222,6 +225,7 @@ struct SymbolCell: View {
                         .scaledToFit()
                         .frame(width: 32, height: 32)
                         .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
                 }
 
                 if isHovered {
@@ -242,6 +246,7 @@ struct SymbolCell: View {
             isHovered = hovering
         }
         .help(symbolName)
+        .accessibilityLabel("Select \(symbolName)")
     }
 }
 
@@ -334,6 +339,7 @@ struct EmojiBrowserView: View {
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(.secondary)
+                        .accessibilityLabel("Close")
                 }
                 .buttonStyle(.plain)
             }
@@ -344,6 +350,7 @@ struct EmojiBrowserView: View {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
                 TextField("Search emoji by name or tag...", text: $searchText)
                     .textFieldStyle(.plain)
                 if !searchText.isEmpty {
@@ -352,6 +359,7 @@ struct EmojiBrowserView: View {
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundStyle(.secondary)
+                            .accessibilityLabel("Clear search")
                     }
                     .buttonStyle(.plain)
                 }
@@ -423,6 +431,7 @@ private struct EmojiCell: View {
             isHovered = hovering
         }
         .help(name)
+        .accessibilityLabel("Select \(name)")
     }
 }
 

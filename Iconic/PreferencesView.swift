@@ -113,7 +113,7 @@ struct PreferencesView: View {
             // Search bar
             HStack {
                 Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.secondary).accessibilityHidden(true)
                 TextField("Search settings...", text: $settingsSearchText)
                     .textFieldStyle(.plain)
                     .onTapGesture {
@@ -126,7 +126,7 @@ struct PreferencesView: View {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.plain).accessibilityLabel("Clear search")
                 }
             }
             .padding(.horizontal, 12)
@@ -280,7 +280,7 @@ struct PreferencesView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
-                        .font(.caption)
+                        .font(.caption).accessibilityHidden(true)
                     Text("Enable 'Use AI matching' above to use this feature")
                         .font(.caption)
                         .foregroundStyle(.orange)
@@ -304,7 +304,7 @@ struct PreferencesView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
+                    .foregroundStyle(.green).accessibilityHidden(true)
                 Text("API key stored securely in Keychain")
                     .font(.subheadline)
             }
@@ -436,7 +436,7 @@ struct PreferencesView: View {
                         ForEach(monitoredLocations, id: \.path) { location in
                             HStack {
                                 Image(systemName: "folder")
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(.secondary).accessibilityHidden(true)
                                 Text(location.path)
                                     .font(.caption)
                                     .lineLimit(1)
@@ -450,7 +450,7 @@ struct PreferencesView: View {
                                     Image(systemName: "minus.circle.fill")
                                         .foregroundStyle(.red)
                                 }
-                                .buttonStyle(.plain)
+                                .buttonStyle(.plain).accessibilityLabel("Remove location")
                             }
                             .padding(.horizontal, 12)
                             .padding(.vertical, 6)
@@ -487,7 +487,7 @@ struct PreferencesView: View {
                     HStack(spacing: 6) {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundStyle(.orange)
-                            .font(.caption)
+                            .font(.caption).accessibilityHidden(true)
                         Text("Enable 'Monitor folders' above to use notifications")
                             .font(.caption)
                             .foregroundStyle(.orange)
@@ -506,7 +506,7 @@ struct PreferencesView: View {
             if backgroundMonitoringEnabled {
                 HStack(spacing: 8) {
                     Image(systemName: "info.circle")
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(.blue).accessibilityHidden(true)
                     Text("New folders are matched using your rules first, then AI (if enabled), smart content detection, and the built-in dictionary.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -635,7 +635,7 @@ struct PreferencesView: View {
     private var matchingPriorityBanner: some View {
         HStack(spacing: 8) {
             Image(systemName: "info.circle")
-                .foregroundStyle(.blue)
+                .foregroundStyle(.blue).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Matching Priority")
                     .font(.caption)
@@ -671,7 +671,7 @@ struct PreferencesView: View {
                 VStack(spacing: 6) {
                     Image(systemName: "list.bullet.rectangle")
                         .font(.title)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.secondary).accessibilityHidden(true)
                     Text("No custom mappings yet")
                         .foregroundStyle(.secondary)
                 }
@@ -696,7 +696,7 @@ struct PreferencesView: View {
             TextField("Keyword (e.g. clients)", text: $newKeyword)
                 .textFieldStyle(.roundedBorder)
             Image(systemName: "arrow.right")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.secondary).accessibilityHidden(true)
             TextField("SF Symbol (e.g. person.2.fill)", text: $newSymbol)
                 .textFieldStyle(.roundedBorder)
             symbolValidityIndicator(for: newSymbol)
@@ -721,9 +721,9 @@ struct PreferencesView: View {
         if trimmed.isEmpty {
             EmptyView()
         } else if NSImage(systemSymbolName: trimmed, accessibilityDescription: nil) != nil {
-            Image(systemName: "checkmark.seal.fill").foregroundStyle(.green)
+            Image(systemName: "checkmark.seal.fill").foregroundStyle(.green).accessibilityHidden(true)
         } else {
-            Image(systemName: "questionmark.circle").foregroundStyle(.orange)
+            Image(systemName: "questionmark.circle").foregroundStyle(.orange).accessibilityHidden(true)
         }
     }
 
@@ -780,7 +780,7 @@ struct PreferencesView: View {
                 .labelsHidden()
                 .frame(maxWidth: 130)
                 Image(systemName: "arrow.right")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.secondary).accessibilityHidden(true)
                 TextField("SF Symbol", text: $newRuleSymbol)
                     .textFieldStyle(.roundedBorder)
                     .frame(maxWidth: 140)
@@ -809,7 +809,7 @@ struct PreferencesView: View {
                 VStack(spacing: 6) {
                     Image(systemName: "wand.and.stars")
                         .font(.title)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.secondary).accessibilityHidden(true)
                     Text("No rules yet")
                         .foregroundStyle(.secondary)
                     Text("Rules let you map folder name patterns to specific icons.")
@@ -854,7 +854,7 @@ struct PreferencesView: View {
                 VStack(spacing: 6) {
                     Image(systemName: "square.grid.2x2")
                         .font(.title)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.secondary).accessibilityHidden(true)
                     Text("No templates yet")
                         .foregroundStyle(.secondary)
                     Text("Right-click a folder in the main view → \"Save as Template\" to create one.")
@@ -878,7 +878,7 @@ struct PreferencesView: View {
                                         .frame(width: 36, height: 36)
                                 }
                                 Image(systemName: NSImage(systemSymbolName: template.symbol, accessibilityDescription: nil) != nil ? template.symbol : "questionmark")
-                                    .foregroundStyle(template.symbolColor.map { Color($0) } ?? .secondary)
+                                    .foregroundStyle(template.symbolColor.map { Color($0) } ?? .secondary).accessibilityHidden(true)
                             }
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(template.name)
@@ -978,7 +978,7 @@ struct PreferencesView: View {
                 } label: {
                     Image(systemName: "plus.circle.fill")
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.borderless).accessibilityLabel("Add pattern")
                 .disabled(newExcludePattern.trimmingCharacters(in: .whitespaces).isEmpty)
             }
 
@@ -994,7 +994,7 @@ struct PreferencesView: View {
                         HStack {
                             Image(systemName: "nosign")
                                 .foregroundStyle(.secondary)
-                                .frame(width: 18)
+                                .frame(width: 18).accessibilityHidden(true)
                             Text(pattern)
                                 .font(.system(.body, design: .monospaced))
                             Spacer()
@@ -1005,7 +1005,7 @@ struct PreferencesView: View {
                                     .foregroundStyle(.red)
                             }
                             .buttonStyle(.borderless)
-                            .help("Remove pattern")
+                            .help("Remove pattern").accessibilityLabel("Remove pattern")
                         }
                         .padding(.vertical, 2)
                     }
@@ -1029,7 +1029,7 @@ struct PreferencesView: View {
                         in: ScanDepthStore.minLimit...ScanDepthStore.maxLimit) {
                     HStack(spacing: 6) {
                         Image(systemName: "arrow.down.to.line")
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.secondary).accessibilityHidden(true)
                         Text("\(scanDepthLimit) level\(scanDepthLimit == 1 ? "" : "s")")
                             .font(.system(.body, design: .monospaced))
                     }
@@ -1070,7 +1070,7 @@ struct PreferencesView: View {
         HStack(spacing: 12) {
             Image(systemName: icon)
                 .frame(width: 24)
-                .foregroundStyle(.blue)
+                .foregroundStyle(.blue).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(label)
                     .font(.body)
@@ -1186,7 +1186,7 @@ struct PreferencesView: View {
                 VStack(spacing: 6) {
                     Image(systemName: "chart.bar")
                         .font(.title)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.secondary).accessibilityHidden(true)
                     Text("No symbols used yet")
                         .foregroundStyle(.secondary)
                         .font(.caption)
@@ -1199,7 +1199,7 @@ struct PreferencesView: View {
                             HStack(spacing: 12) {
                                 Image(systemName: symbol)
                                     .frame(width: 24)
-                                    .foregroundStyle(.blue)
+                                    .foregroundStyle(.blue).accessibilityHidden(true)
                                 Text(symbol)
                                     .font(.system(.body, design: .monospaced))
                                 Spacer()
@@ -1243,7 +1243,7 @@ private struct RuleRow: View {
             .labelsHidden()
 
             Image(systemName: NSImage(systemSymbolName: rule.symbol, accessibilityDescription: nil) != nil ? rule.symbol : "questionmark")
-                .frame(width: 22)
+                .frame(width: 22).accessibilityHidden(true)
 
             if isEditing {
                 TextField("Pattern", text: $draftPattern)
@@ -1299,7 +1299,7 @@ private struct RuleRow: View {
                 } label: {
                     Image(systemName: "pencil")
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.borderless).accessibilityLabel("Edit rule")
             }
         }
         .padding(.vertical, 2)
@@ -1319,7 +1319,7 @@ private struct MappingRow: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: NSImage(systemSymbolName: mapping.symbol, accessibilityDescription: nil) != nil ? mapping.symbol : "questionmark")
-                .frame(width: 22)
+                .frame(width: 22).accessibilityHidden(true)
 
             if isEditing {
                 TextField("Keyword", text: $keyword)
@@ -1348,7 +1348,7 @@ private struct MappingRow: View {
                 } label: {
                     Image(systemName: "pencil")
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.borderless).accessibilityLabel("Edit mapping")
             }
         }
         .padding(.vertical, 2)
@@ -1402,7 +1402,7 @@ private struct PresetsTabView: View {
                 VStack(spacing: 6) {
                     Image(systemName: "square.stack.3d.up")
                         .font(.title)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.secondary).accessibilityHidden(true)
                     Text("No presets saved yet")
                         .foregroundStyle(.secondary)
                 }
@@ -1559,7 +1559,7 @@ private struct PresetRow: View {
         HStack(spacing: 8) {
             Image(systemName: "square.stack.3d.up.fill")
                 .foregroundStyle(.blue)
-                .frame(width: 22)
+                .frame(width: 22).accessibilityHidden(true)
 
             if isEditing {
                 TextField("Preset name", text: $editingName)
@@ -1599,7 +1599,7 @@ private struct PresetRow: View {
                     Image(systemName: "square.and.arrow.up")
                 }
                 .buttonStyle(.borderless)
-                .help("Export preset")
+                .help("Export preset").accessibilityLabel("Export preset")
 
                 Button {
                     onEdit()
@@ -1607,7 +1607,7 @@ private struct PresetRow: View {
                     Image(systemName: "pencil")
                 }
                 .buttonStyle(.borderless)
-                .help("Rename preset")
+                .help("Rename preset").accessibilityLabel("Rename preset")
             }
         }
         .padding(.vertical, 4)

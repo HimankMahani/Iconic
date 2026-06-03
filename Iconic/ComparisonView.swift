@@ -35,7 +35,7 @@ struct ComparisonView: View {
                             .resizable()
                             .interpolation(.high)
                             .scaledToFit()
-                            .frame(width: 200, height: 200)
+                            .frame(width: 200, height: 200).accessibilityHidden(true)
                     } else {
                         ZStack {
                             RoundedRectangle(cornerRadius: 12)
@@ -44,6 +44,7 @@ struct ComparisonView: View {
                             Image(systemName: "folder")
                                 .font(.system(size: 80))
                                 .foregroundStyle(.secondary)
+                                .accessibilityHidden(true)
                         }
                     }
                 }
@@ -51,6 +52,7 @@ struct ComparisonView: View {
                 Image(systemName: "arrow.right")
                     .font(.title2)
                     .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
 
                 VStack(spacing: 12) {
                     Text("New")
@@ -62,7 +64,7 @@ struct ComparisonView: View {
                             .resizable()
                             .interpolation(.high)
                             .scaledToFit()
-                            .frame(width: 200, height: 200)
+                            .frame(width: 200, height: 200).accessibilityHidden(true)
                     } else {
                         ZStack {
                             RoundedRectangle(cornerRadius: 12)
@@ -75,6 +77,7 @@ struct ComparisonView: View {
                                 Image(systemName: item.symbolName)
                                     .font(.system(size: 80))
                                     .foregroundStyle(.secondary)
+                                    .accessibilityHidden(true)
                             }
                         }
                     }
@@ -84,6 +87,7 @@ struct ComparisonView: View {
             Button("Close") {
                 dismiss()
             }
+            .accessibilityLabel("Close comparison")
             .keyboardShortcut(.cancelAction)
         }
         .padding(32)

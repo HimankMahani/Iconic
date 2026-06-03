@@ -10,11 +10,14 @@ import Foundation
 import AppKit
 import Combine
 
+/// Bounded undo/redo stack for icon apply/restore operations.
+/// Capped at 20 actions; a new recorded action clears the redo stack.
 @MainActor
 final class IconicUndoManager: ObservableObject {
 
     // MARK: - Action Types
 
+    /// Discriminated union of all reversible icon operations.
     enum ActionType {
         case applySingle(url: URL, previousState: FolderState)
         case restoreSingle(url: URL, previousState: FolderState)
@@ -22,6 +25,8 @@ final class IconicUndoManager: ObservableObject {
         case restoreMultiple(states: [URL: FolderState])
     }
 
+    /// Minimal snapshot of a folder's icon state, captured at action-record
+    /// time so we can restore it on undo.
     struct FolderState {
         let status: FolderItemStatus
         let symbolName: String
@@ -40,6 +45,8 @@ final class IconicUndoManager: ObservableObject {
 
     // MARK: - Public Methods
 
+    /// Records a new action, dropping the oldest if the stack is full and
+    /// clearing the redo stack (standard linear-history undo semantics).
     func recordAction(_ action: ActionType) {
         undoStack.append(action)
 
@@ -54,6 +61,10 @@ final class IconicUndoManager: ObservableObject {
         updateState()
     }
 
+    /// Reverts the most recent action. The action is pushed onto the redo
+    /// stack so it can be reapplied with `redo`. The closures are invoked
+    /// to perform the actual filesystem work — this manager only mutates
+    /// the in-memory `FolderItem` state and dispatches the side effect.
     func undo(items: [FolderItem], applyIcon: @escaping (FolderItem, String, NSColor?) -> Void, restoreIcon: @escaping (FolderItem) -> Void) {
         guard let action = undoStack.popLast() else { return }
 

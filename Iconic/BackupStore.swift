@@ -9,6 +9,8 @@ import Foundation
 import SwiftUI
 import Combine
 
+/// A single folder's icon settings captured in a `BackupSnapshot`.
+/// Stores colors as hex strings so the snapshot is JSON-portable.
 struct BackupEntry: Codable, Hashable {
     var folderPath: String
     var symbolName: String
@@ -20,6 +22,8 @@ struct BackupEntry: Codable, Hashable {
     var symbolGradientEndHex: String?
 }
 
+/// A named, point-in-time capture of a folder tree's icon assignments.
+/// Shown in the Backups preferences tab and can be applied via `BackupStore.restore`.
 struct BackupSnapshot: Identifiable, Codable, Hashable {
     var id = UUID()
     var name: String
@@ -28,16 +32,25 @@ struct BackupSnapshot: Identifiable, Codable, Hashable {
     var entries: [BackupEntry]
 }
 
+/// In-memory list of saved icon-map snapshots, persisted to `UserDefaults`.
+/// Drives the Backups preferences tab.
 @MainActor
 final class BackupStore: ObservableObject {
     @Published private(set) var snapshots: [BackupSnapshot] = []
 
     private let key = "iconic.backups.v1"
 
+    /// Loads any previously-saved snapshots from `UserDefaults`.
     init() {
         load()
     }
 
+    /// Captures the current icon settings for `items` and stores them as a new snapshot.
+    /// - Parameters:
+    ///   - name: User-supplied label for the snapshot.
+    ///   - items: Folders to include in the snapshot.
+    ///   - rootURL: Optional root of the folder tree the snapshot represents.
+    /// - Returns: The newly created snapshot (also prepended to `snapshots`).
     func capture(name: String, items: [FolderItem], rootURL: URL?) -> BackupSnapshot {
         let entries = items.map { item in
             BackupEntry(
@@ -64,6 +77,12 @@ final class BackupStore: ObservableObject {
         return snapshot
     }
 
+    /// Mutates the in-memory `items` to match `snapshot`. Items not present
+    /// in the snapshot are left untouched. Note: this only updates the model —
+    /// callers are responsible for re-applying the icons to disk.
+    /// - Parameters:
+    ///   - snapshot: The snapshot to replay.
+    ///   - items: The current folder list to mutate in place.
     func restore(_ snapshot: BackupSnapshot, into items: [FolderItem]) {
         let entryLookup = Dictionary(uniqueKeysWithValues: snapshot.entries.map { ($0.folderPath, $0) })
 
@@ -80,11 +99,13 @@ final class BackupStore: ObservableObject {
         }
     }
 
+    /// Removes snapshots at the given indices (ForEach `.onDelete` hook).
     func remove(at offsets: IndexSet) {
         snapshots.remove(atOffsets: offsets)
         save()
     }
 
+    /// Removes the snapshot with the given id, if present.
     func remove(id: UUID) {
         snapshots.removeAll { $0.id == id }
         save()

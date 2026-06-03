@@ -10,6 +10,73 @@ import UniformTypeIdentifiers
 
 struct FolderRowView: View {
 
+    // MARK: - Layout constants
+
+    private enum K {
+        // Row body
+        static let rowSpacing: CGFloat = 12
+        static let previewSize: CGFloat = 44
+        static let titleStackSpacing: CGFloat = 2
+        static let rowHorizontalPadding: CGFloat = 12
+        static let rowVerticalPadding: CGFloat = 8
+        static let selectionBackgroundOpacity: Double = 0.18
+
+        // More-options menu + placeholder
+        static let moreMenuIconSize: CGFloat = 14
+        static let placeholderCornerRadius: CGFloat = 6
+        static let placeholderGlyphSize: CGFloat = 22
+        static let tightSpacing: CGFloat = 4
+
+        // Match-source dot + swatches
+        static let matchSourceDotSize: CGFloat = 6
+        static let colorSwatchSize: CGFloat = 12
+        static let swatchBorderOpacity: Double = 0.25
+        static let swatchBorderLineWidth: CGFloat = 0.5
+        static let defaultSwatchOpacity: Double = 0.25
+
+        // Popover shell
+        static let popoverSectionSpacing: CGFloat = 14
+        static let popoverSubSectionSpacing: CGFloat = 6
+        static let popoverPadding: CGFloat = 14
+        static let popoverSize: CGSize = .init(width: 340, height: 480)
+
+        // Sliders
+        static let sizeSliderRange: ClosedRange<Double> = 0.4...1.6
+        static let opacitySliderRange: ClosedRange<Double> = 0.1...1.0
+        static let offsetYSliderRange: ClosedRange<Double> = -0.5...0.5
+
+        // Adjustment row
+        static let adjustmentLabelWidth: CGFloat = 70
+        static let adjustmentValueWidth: CGFloat = 50
+
+        // Color picker
+        static let colorPickerWidth: CGFloat = 28
+        static let colorRowSpacing: CGFloat = 8
+        static let colorRowLabelWidth: CGFloat = 70
+        static let gradientStartBlendFraction: CGFloat = 0.4
+
+        // Symbol input + suggestions
+        static let symbolInputFieldWidth: CGFloat = 240
+        static let suggestionsRowSpacing: CGFloat = 6
+        static let suggestionButtonSpacing: CGFloat = 4
+        static let suggestionButtonHorizontalPadding: CGFloat = 8
+        static let suggestionButtonVerticalPadding: CGFloat = 4
+
+        // Default folder swatch color (UI stub; the actual default render
+        // color comes from ColorPreferences.getDefaultColor())
+        static let defaultFolderSwatchRGB: (r: CGFloat, g: CGFloat, b: CGFloat) = (0.30, 0.55, 0.95)
+
+        // Dominant color extraction (the importFinderIcon helper)
+        static let dominantColorSampleStride: Int = 10
+        static let dominantColorMinBrightness: Double = 0.2
+        static let dominantColorMaxBrightness: Double = 0.9
+
+        // contrastingColor helper
+        static let contrastingSaturationBoost: Double = 1.2
+        static let contrastingBrightnessFactor: Double = 0.6
+        static let contrastingAlpha: Double = 0.9
+    }
+
     @ObservedObject var item: FolderItem
     @EnvironmentObject private var suggestionsStore: SmartSuggestionsStore
     let isSelected: Bool
@@ -42,11 +109,11 @@ struct FolderRowView: View {
     @FocusState private var symbolFieldFocused: Bool
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: K.rowSpacing) {
             preview
-                .frame(width: 44, height: 44)
+                .frame(width: K.previewSize, height: K.previewSize)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: K.titleStackSpacing) {
                 Text(item.displayName)
                     .font(.body)
                     .lineLimit(1)
@@ -76,6 +143,10 @@ struct FolderRowView: View {
             .help(item.isUnassigned
                   ? "Pick a symbol for this folder"
                   : "Edit symbol, size, colors, and more")
+            .accessibilityLabel(item.isUnassigned
+                                ? "Pick a symbol for \(item.displayName)"
+                                : "Edit icon for \(item.displayName)")
+            .accessibilityHint("Opens the symbol, colors, and adjustments editor")
             .popover(isPresented: $showingEditPopover, arrowEdge: .bottom) {
                 editPopover
             }
@@ -89,9 +160,9 @@ struct FolderRowView: View {
                       ? "No symbol match for this folder. Pick one with the pencil button, or change the matching mode in Settings."
                       : "Apply the current icon to this folder")
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(isSelected ? Color.accentColor.opacity(0.18) : Color.clear)
+        .padding(.horizontal, K.rowHorizontalPadding)
+        .padding(.vertical, K.rowVerticalPadding)
+        .background(isSelected ? Color.accentColor.opacity(K.selectionBackgroundOpacity) : Color.clear)
         .contentShape(Rectangle())
         .gesture(
             TapGesture().modifiers(.shift).onEnded { onExtendSelect() }
@@ -146,13 +217,14 @@ struct FolderRowView: View {
     private var moreOptionsMenu: some View {
         Menu { rowMenuItems } label: {
             Image(systemName: "ellipsis.circle")
-                .font(.system(size: 14))
+                .font(.system(size: K.moreMenuIconSize))
                 .foregroundStyle(.secondary)
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
         .help("More options (or right-click row)")
+        .accessibilityLabel("More options for \(item.displayName)")
     }
 
     @ViewBuilder
@@ -164,9 +236,9 @@ struct FolderRowView: View {
                 .scaledToFit()
         } else {
             ZStack {
-                RoundedRectangle(cornerRadius: 6)
+                RoundedRectangle(cornerRadius: K.placeholderCornerRadius)
                     .fill(.quaternary)
-                glyphView(item.symbolName, size: 22)
+                glyphView(item.symbolName, size: K.placeholderGlyphSize)
                     .foregroundStyle(.secondary)
             }
         }
@@ -186,14 +258,14 @@ struct FolderRowView: View {
     @ViewBuilder
     private func glyphLabel(_ glyph: String) -> some View {
         if glyph.isEmojiGlyph {
-            HStack(spacing: 4) {
+            HStack(spacing: K.tightSpacing) {
                 Text(glyph)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 matchSourceDot
             }
         } else {
-            HStack(spacing: 4) {
+            HStack(spacing: K.tightSpacing) {
                 Image(systemName: glyph)
                     .font(.caption2)
                 Text(glyph)
@@ -210,7 +282,7 @@ struct FolderRowView: View {
     private var matchSourceDot: some View {
         Circle()
             .fill(item.matchSource.color)
-            .frame(width: 6, height: 6)
+            .frame(width: K.matchSourceDotSize, height: K.matchSourceDotSize)
             .help("Matched by: \(item.matchSource.displayName)")
     }
 
@@ -222,20 +294,17 @@ struct FolderRowView: View {
         case .applying:
             ProgressView().controlSize(.small)
         case .applied:
-            Label("Applied", systemImage: "checkmark.circle.fill")
-                .labelStyle(.iconOnly)
+            Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(.green)
-                .help("Icon applied")
+                .accessibilityLabel("Icon applied to \(item.displayName)")
         case .restored:
-            Label("Restored", systemImage: "arrow.uturn.backward.circle.fill")
-                .labelStyle(.iconOnly)
+            Image(systemName: "arrow.uturn.backward.circle.fill")
                 .foregroundStyle(.blue)
-                .help("Default icon restored")
+                .accessibilityLabel("Default icon restored for \(item.displayName)")
         case .failed(let msg):
-            Label("Error", systemImage: "exclamationmark.triangle.fill")
-                .labelStyle(.iconOnly)
+            Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(.red)
-                .help(msg)
+                .accessibilityLabel("Error: \(msg)")
         }
     }
 
@@ -246,23 +315,24 @@ struct FolderRowView: View {
         Button {
             showingEditPopover = true
         } label: {
-            HStack(spacing: 4) {
+            HStack(spacing: K.tightSpacing) {
                 colorSwatch(color: item.folderColor, help: "Folder color")
                 colorSwatch(color: item.symbolColor, help: "Symbol color")
             }
         }
         .buttonStyle(.plain)
         .help("Edit colors")
+        .accessibilityLabel("Edit colors for \(item.displayName)")
     }
 
     @ViewBuilder
     private func colorSwatch(color: NSColor?, help: String) -> some View {
         Circle()
             .fill(swatchFill(color: color))
-            .frame(width: 12, height: 12)
+            .frame(width: K.colorSwatchSize, height: K.colorSwatchSize)
             .overlay(
                 Circle()
-                    .stroke(Color.primary.opacity(0.25), lineWidth: 0.5)
+                    .stroke(Color.primary.opacity(K.swatchBorderOpacity), lineWidth: K.swatchBorderLineWidth)
             )
             .help(color == nil ? "\(help) (default)" : help)
     }
@@ -271,7 +341,7 @@ struct FolderRowView: View {
         if let ns = color {
             return Color(nsColor: ns)
         }
-        return Color.gray.opacity(0.25)
+        return Color.gray.opacity(K.defaultSwatchOpacity)
     }
 
     // MARK: - Unified edit popover (symbol + adjustments + colors + layers + custom image)
@@ -279,7 +349,7 @@ struct FolderRowView: View {
     @ViewBuilder
     private var editPopover: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: K.popoverSectionSpacing) {
                 Text(editPopoverTitle)
                     .font(.headline)
 
@@ -302,9 +372,9 @@ struct FolderRowView: View {
                         .keyboardShortcut(.defaultAction)
                 }
             }
-            .padding(14)
+            .padding(K.popoverPadding)
         }
-        .frame(width: 340, height: 480)
+        .frame(width: K.popoverSize.width, height: K.popoverSize.height)
         .sheet(isPresented: $showingSymbolBrowser) {
             SymbolBrowserView { symbol in
                 draftSymbol = symbol
@@ -328,7 +398,7 @@ struct FolderRowView: View {
 
     @ViewBuilder
     private var symbolSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: K.popoverSubSectionSpacing) {
             sectionHeader("Symbol")
             if item.isUnassigned {
                 symbolInputRow
@@ -363,20 +433,20 @@ struct FolderRowView: View {
 
     @ViewBuilder
     private var adjustmentsSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: K.popoverSubSectionSpacing) {
             sectionHeader("Adjustments")
             adjustmentRow(label: "Size", binding: Binding(
                 get: { item.symbolScale },
                 set: { item.symbolScale = $0; onAdjust() }
-            ), range: 0.4...1.6, format: { "\(Int($0 * 100))%" })
+            ), range: K.sizeSliderRange, format: { "\(Int($0 * 100))%" })
             adjustmentRow(label: "Opacity", binding: Binding(
                 get: { item.symbolOpacity },
                 set: { item.symbolOpacity = $0; onAdjust() }
-            ), range: 0.1...1.0, format: { "\(Int($0 * 100))%" })
+            ), range: K.opacitySliderRange, format: { "\(Int($0 * 100))%" })
             adjustmentRow(label: "Offset Y", binding: Binding(
                 get: { item.symbolOffsetY },
                 set: { item.symbolOffsetY = $0; onAdjust() }
-            ), range: -0.5...0.5, format: { String(format: "%+.2f", $0) })
+            ), range: K.offsetYSliderRange, format: { String(format: "%+.2f", $0) })
         }
     }
 
@@ -391,16 +461,29 @@ struct FolderRowView: View {
             Text(label)
                 .frame(width: 70, alignment: .leading)
             Slider(value: binding, in: range)
+                .accessibilityValue("\(Int(binding.wrappedValue * 100)) percent")
+                .accessibilityAdjustableAction { direction in
+                    let step = 0.05
+                    switch direction {
+                    case .increment:
+                        binding.wrappedValue = min(range.upperBound, binding.wrappedValue + step)
+                    case .decrement:
+                        binding.wrappedValue = max(range.lowerBound, binding.wrappedValue - step)
+                    @unknown default:
+                        break
+                    }
+                }
             Text(format(binding.wrappedValue))
                 .font(.caption)
                 .frame(width: 50, alignment: .trailing)
                 .monospacedDigit()
         }
     }
+    }
 
     @ViewBuilder
     private var layersSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: K.popoverSubSectionSpacing) {
             sectionHeader("Layers")
             if item.symbolNames.count > 1 {
                 VStack(spacing: 4) {
@@ -418,6 +501,7 @@ struct FolderRowView: View {
                                     .foregroundStyle(.red)
                             }
                             .buttonStyle(.plain)
+                            .accessibilityLabel("Remove layer \(symbolName)")
                             .disabled(item.symbolNames.count <= 1)
                         }
                         .padding(.horizontal, 8)
@@ -427,7 +511,7 @@ struct FolderRowView: View {
                     }
                 }
             }
-            if item.symbolNames.count < 3 {
+            if item.symbolNames.count < IconRenderer.Layout.maxLayers {
                 HStack {
                     TextField(IconStyleStore.current == .emoji ? "Add emoji layer" : "Add symbol layer", text: $newLayerSymbol)
                         .textFieldStyle(.roundedBorder)
@@ -439,6 +523,7 @@ struct FolderRowView: View {
                             .foregroundStyle(.green)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Add layer")
                     .disabled(newLayerSymbol.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             } else {
@@ -451,7 +536,7 @@ struct FolderRowView: View {
 
     @ViewBuilder
     private var colorsSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: K.popoverSubSectionSpacing) {
             sectionHeader("Colors")
             colorRow(
                 label: "Folder",
@@ -476,14 +561,14 @@ struct FolderRowView: View {
 
     @ViewBuilder
     private var gradientSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: K.popoverSubSectionSpacing) {
             sectionHeader("Gradient")
             HStack {
                 Toggle("Enabled", isOn: Binding(
                     get: { item.symbolGradientEnd != nil },
                     set: { enabled in
                         if enabled {
-                            item.symbolGradientEnd = (item.symbolColor ?? .systemBlue).blended(withFraction: 0.4, of: .black)
+                            item.symbolGradientEnd = (item.symbolColor ?? .systemBlue).blended(withFraction: K.gradientStartBlendFraction, of: .black)
                         } else {
                             item.symbolGradientEnd = nil
                         }
@@ -500,7 +585,8 @@ struct FolderRowView: View {
                         }
                     ))
                     .labelsHidden()
-                    .frame(width: 28)
+                    .frame(width: K.colorPickerWidth)
+                    .accessibilityLabel("Gradient end color")
                 }
             }
         }
@@ -508,7 +594,7 @@ struct FolderRowView: View {
 
     @ViewBuilder
     private var customImageSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: K.popoverSubSectionSpacing) {
             sectionHeader("Custom Image")
             HStack {
                 Text(item.customImage == nil ? "None" : "Image set")
@@ -545,12 +631,13 @@ struct FolderRowView: View {
         isSet: Bool,
         onClear: @escaping () -> Void
     ) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: K.colorRowSpacing) {
             Text(label)
-                .frame(width: 70, alignment: .leading)
+                .frame(width: K.colorRowLabelWidth, alignment: .leading)
             ColorPicker("", selection: color, supportsOpacity: false)
                 .labelsHidden()
-                .frame(width: 28)
+                .frame(width: K.colorPickerWidth)
+                .accessibilityLabel(label)
             if isSet {
                 Button {
                     onClear()
@@ -560,6 +647,7 @@ struct FolderRowView: View {
                 }
                 .buttonStyle(.plain)
                 .help("Reset to default")
+                .accessibilityLabel("Reset \(label) color to default")
             } else {
                 Text("default")
                     .font(.caption2)
@@ -573,7 +661,7 @@ struct FolderRowView: View {
     private var symbolInputRow: some View {
         TextField(IconStyleStore.current == .emoji ? "e.g. 🎵" : "e.g. music.note", text: $draftSymbol)
             .textFieldStyle(.roundedBorder)
-            .frame(width: 240)
+            .frame(width: K.symbolInputFieldWidth)
             .focused($symbolFieldFocused)
             .onSubmit { commit() }
     }
@@ -602,22 +690,22 @@ struct FolderRowView: View {
     @ViewBuilder
     private var suggestionsSection: some View {
         if !suggestions.isEmpty {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: K.popoverSubSectionSpacing) {
                 Text("Suggestions")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                HStack(spacing: 6) {
+                HStack(spacing: K.suggestionsRowSpacing) {
                     ForEach(suggestions, id: \.self) { symbol in
                         Button {
                             draftSymbol = symbol
                         } label: {
-                            HStack(spacing: 4) {
+                            HStack(spacing: K.suggestionButtonSpacing) {
                                 glyphView(symbol, size: 12)
                                 Text(symbol)
                                     .font(.caption2)
                             }
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
+                            .padding(.horizontal, K.suggestionButtonHorizontalPadding)
+                            .padding(.vertical, K.suggestionButtonVerticalPadding)
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
@@ -632,7 +720,7 @@ struct FolderRowView: View {
     }
 
     private var defaultFolderSwatchColor: NSColor {
-        NSColor(calibratedRed: 0.30, green: 0.55, blue: 0.95, alpha: 1.0)
+        NSColor(calibratedRed: K.defaultFolderSwatchRGB.r, green: K.defaultFolderSwatchRGB.g, blue: K.defaultFolderSwatchRGB.b, alpha: 1.0)
     }
 
     private var defaultSymbolSwatchColor: NSColor {
@@ -650,7 +738,7 @@ struct FolderRowView: View {
 
     private func addLayer() {
         let trimmed = newLayerSymbol.trimmingCharacters(in: .whitespaces)
-        guard isValidGlyph(trimmed), item.symbolNames.count < 3 else { return }
+        guard isValidGlyph(trimmed), item.symbolNames.count < IconRenderer.Layout.maxLayers else { return }
         item.symbolNames.append(trimmed)
         newLayerSymbol = ""
         onAdjust()
@@ -663,8 +751,11 @@ struct FolderRowView: View {
     }
 
     private func resetAdjustments() {
+        // TODO: use FolderItem.defaultSymbolScale
         item.symbolScale = 1.0
+        // TODO: use FolderItem.defaultSymbolOpacity
         item.symbolOpacity = 1.0
+        // TODO: use FolderItem.defaultSymbolOffsetY
         item.symbolOffsetY = 0.0
         item.symbolGradientEnd = nil
         item.customImage = nil
@@ -722,7 +813,7 @@ struct FolderRowView: View {
         let pixelCount = bitmap.pixelsWide * bitmap.pixelsHigh
         let samplesPerPixel = bitmap.samplesPerPixel
 
-        for i in stride(from: 0, to: pixelCount, by: 10) {
+        for i in stride(from: 0, to: pixelCount, by: K.dominantColorSampleStride) {
             let offset = i * samplesPerPixel
             guard offset + 2 < bitmap.bytesPerRow * bitmap.pixelsHigh else { continue }
 
@@ -731,7 +822,7 @@ struct FolderRowView: View {
             let blue = CGFloat(data[offset + 2]) / 255.0
 
             let brightness = (red + green + blue) / 3.0
-            if brightness > 0.2 && brightness < 0.9 {
+            if brightness > K.dominantColorMinBrightness && brightness < K.dominantColorMaxBrightness {
                 r += red
                 g += green
                 b += blue
@@ -747,6 +838,6 @@ struct FolderRowView: View {
         guard let rgb = color.usingColorSpace(.sRGB) else { return .white }
         var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
         rgb.getHue(&h, saturation: &s, brightness: &b, alpha: &a)
-        return NSColor(hue: h, saturation: min(1, s * 1.2), brightness: max(0, b * 0.6), alpha: 0.9)
+        return NSColor(hue: h, saturation: min(1, s * K.contrastingSaturationBoost), brightness: max(0, b * K.contrastingBrightnessFactor), alpha: K.contrastingAlpha)
     }
 }

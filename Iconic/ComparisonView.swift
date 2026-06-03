@@ -9,6 +9,9 @@
 import SwiftUI
 import AppKit
 
+/// Side-by-side before/after view for a single folder's icon, presented
+/// from the row context menu so the user can verify the change visually
+/// before committing to apply or restore.
 struct ComparisonView: View {
     let item: FolderItem
     @Environment(\.dismiss) private var dismiss

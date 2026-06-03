@@ -14,7 +14,55 @@ import UniformTypeIdentifiers
 
 struct IconRenderer {
 
-    static let representationSizes: [CGFloat] = [16, 32, 64, 128, 256, 512]
+    // MARK: - Layout constants
+
+    private enum Layout {
+        // Canvas
+        static let masterCanvasSide: CGFloat = 512
+        static let representationSizes: [CGFloat] = [16, 32, 64, 128, 256, 512]
+
+        // Bitmap
+        static let bitsPerSample: Int = 8
+        static let samplesPerPixel: Int = 4
+        static let bitsPerPixel: Int = 32
+        static let fullOpacity: Double = 1.0
+        static let monochromeIntensity: Double = 1.0
+
+        // Front-face positioning
+        // Empirically tuned — Apple's system folder icon has a tab on
+        // top, so the visual "face" sits below geometric center. If
+        // Apple ever changes the folder icon shape, these need to
+        // change in tandem.
+        static let frontFaceCenterFraction: CGFloat = 0.42
+        static let offsetYToHeightFactor: CGFloat = 0.20
+        static let symbolSideFraction: CGFloat = 0.38
+        static let emojiSideFraction: CGFloat = 0.40
+        static let customImageSideFraction: CGFloat = 0.42
+
+        // Layer stack (max 3 — also enforced in FolderRowView)
+        static let maxLayers: Int = 3
+        static let layer1Scale: CGFloat = 1.0
+        static let layer2Scale: CGFloat = 0.80
+        static let layer2XOffsetFraction: CGFloat = 0.05
+        static let layer2OpacityMultiplier: Double = 0.85
+        static let layer3Scale: CGFloat = 0.70
+        static let layer3XOffsetFraction: CGFloat = 0.10
+        static let layer3OpacityMultiplier: Double = 0.75
+
+        // Drop shadow
+        // Empirically tuned — scales with iconSize so the shadow
+        // looks proportional at every resolution.
+        static let shadowBaseAlpha: CGFloat = 0.10
+        static let shadowBlurFraction: CGFloat = 0.008
+        static let shadowOffsetFraction: CGFloat = 0.004
+        static let minimumShadowMagnitude: CGFloat = 1
+
+        // Gradient
+        static let gradientAngle: CGFloat = 90   // degrees, vertical
+    }
+
+    // Existing public API — keep this so the public surface is unchanged
+    static let representationSizes: [CGFloat] = Layout.representationSizes
 
     private static let ciContext = CIContext(options: [.useSoftwareRenderer: false])
 
@@ -53,7 +101,7 @@ struct IconRenderer {
         let baseFolder = baseFolderIcon()
         guard customImage != nil || !symbolNames.isEmpty else { return baseFolder }
 
-        let composite = NSImage(size: NSSize(width: 512, height: 512))
+        let composite = NSImage(size: NSSize(width: Layout.masterCanvasSide, height: Layout.masterCanvasSide))
         composite.cacheMode = .never
 
         for side in representationSizes {
@@ -79,7 +127,7 @@ struct IconRenderer {
 
     private static func baseFolderIcon() -> NSImage {
         let icon = NSWorkspace.shared.icon(for: .folder)
-        icon.size = NSSize(width: 512, height: 512)
+        icon.size = NSSize(width: Layout.masterCanvasSide, height: Layout.masterCanvasSide)
         return icon
     }
 
@@ -110,7 +158,7 @@ struct IconRenderer {
         let ciImage = CIImage(cgImage: cgImage)
         filter.setValue(ciImage, forKey: kCIInputImageKey)
         filter.setValue(ciColor, forKey: "inputColor")
-        filter.setValue(1.0, forKey: "inputIntensity")
+        filter.setValue(Layout.monochromeIntensity, forKey: "inputIntensity")
         guard let output = filter.outputImage else { return cgImage }
         return ciContext.createCGImage(output, from: output.extent)
     }
@@ -131,13 +179,13 @@ struct IconRenderer {
             bitmapDataPlanes: nil,
             pixelsWide: Int(size.width),
             pixelsHigh: Int(size.height),
-            bitsPerSample: 8,
-            samplesPerPixel: 4,
+            bitsPerSample: Layout.bitsPerSample,
+            samplesPerPixel: Layout.samplesPerPixel,
             hasAlpha: true,
             isPlanar: false,
             colorSpaceName: .deviceRGB,
             bytesPerRow: 0,
-            bitsPerPixel: 32
+            bitsPerPixel: Layout.bitsPerPixel
         ) else { return nil }
 
         rep.size = size
@@ -157,7 +205,7 @@ struct IconRenderer {
            let tinted = tintedFolderImage(folder: folder, size: size, tint: folderTint) {
             ctx.cgContext.draw(tinted, in: rect)
         } else {
-            folder.draw(in: rect, from: .zero, operation: .copy, fraction: 1.0)
+            folder.draw(in: rect, from: .zero, operation: .copy, fraction: Layout.fullOpacity)
         }
 
         if let customImage {
@@ -178,11 +226,11 @@ struct IconRenderer {
     }
 
     private static func drawCustomImage(_ image: NSImage, iconSize: NSSize, opacity: Double, scale: Double, offsetY: Double) {
-        let baseSide = iconSize.width * 0.42 * CGFloat(scale)
+        let baseSide = iconSize.width * Layout.customImageSideFraction * CGFloat(scale)
         let aspect = image.size.width / max(image.size.height, 1)
         let drawWidth = baseSide * (aspect >= 1 ? 1 : aspect)
         let drawHeight = baseSide * (aspect >= 1 ? 1 / aspect : 1)
-        let centerY = iconSize.height * (0.42 + CGFloat(offsetY) * 0.20)
+        let centerY = iconSize.height * (Layout.frontFaceCenterFraction + CGFloat(offsetY) * Layout.offsetYToHeightFactor)
         let drawRect = NSRect(
             x: iconSize.width / 2.0 - drawWidth / 2.0,
             y: centerY - drawHeight / 2.0,
@@ -212,19 +260,19 @@ struct IconRenderer {
 
             switch index {
             case 0:
-                layerScale = 1.0
+                layerScale = Layout.layer1Scale
                 layerOffsetX = 0
                 layerOpacity = opacity
             case 1:
-                layerScale = 0.80
-                layerOffsetX = iconSize.width * 0.05
-                layerOpacity = opacity * 0.85
+                layerScale = Layout.layer2Scale
+                layerOffsetX = iconSize.width * Layout.layer2XOffsetFraction
+                layerOpacity = opacity * Layout.layer2OpacityMultiplier
             case 2:
-                layerScale = 0.70
-                layerOffsetX = iconSize.width * 0.10
-                layerOpacity = opacity * 0.75
+                layerScale = Layout.layer3Scale
+                layerOffsetX = iconSize.width * Layout.layer3XOffsetFraction
+                layerOpacity = opacity * Layout.layer3OpacityMultiplier
             default:
-                continue // Max 3 layers
+                continue // cap at Layout.maxLayers
             }
 
             if name.isEmojiGlyph {
@@ -267,7 +315,7 @@ struct IconRenderer {
     ) {
         // Match macOS Customize Folder's restrained emoji treatment: smaller
         // than a raw emoji glyph would be, centered on the folder face.
-        let pointSize = iconSize.width * 0.40 * CGFloat(scale)
+        let pointSize = iconSize.width * Layout.emojiSideFraction * CGFloat(scale)
         let font = NSFont(name: "Apple Color Emoji", size: pointSize)
             ?? NSFont.systemFont(ofSize: pointSize)
 
@@ -282,7 +330,7 @@ struct IconRenderer {
         let str = NSAttributedString(string: emoji, attributes: attrs)
         let textSize = str.size()
 
-        let centerY = iconSize.height * (0.42 + CGFloat(offsetY) * 0.20)
+        let centerY = iconSize.height * (Layout.frontFaceCenterFraction + CGFloat(offsetY) * Layout.offsetYToHeightFactor)
         let centerX = iconSize.width / 2.0 + CGFloat(offsetX)
         let rect = NSRect(
             x: centerX - textSize.width / 2.0,
@@ -309,7 +357,7 @@ struct IconRenderer {
         offsetX: Double = 0,
         gradientEnd: NSColor?
     ) {
-        let symbolSide = iconSize.width * 0.38 * CGFloat(scale)
+        let symbolSide = iconSize.width * Layout.symbolSideFraction * CGFloat(scale)
         let config = NSImage.SymbolConfiguration(pointSize: symbolSide, weight: .regular)
             .applying(.init(paletteColors: [color]))
 
@@ -319,7 +367,7 @@ struct IconRenderer {
         let symSize = symbol.size
         // Front-face center sits a touch below geometric center because of
         // the tab on top. offsetY shifts it (-0.5...0.5 maps to ±0.10 of icon height).
-        let centerY = iconSize.height * (0.42 + CGFloat(offsetY) * 0.20)
+        let centerY = iconSize.height * (Layout.frontFaceCenterFraction + CGFloat(offsetY) * Layout.offsetYToHeightFactor)
         let centerX = iconSize.width / 2.0 + CGFloat(offsetX)
         let symRect = NSRect(
             x: centerX - symSize.width / 2.0,
@@ -333,9 +381,9 @@ struct IconRenderer {
         // already a dark shade of the folder.
         NSGraphicsContext.current?.saveGraphicsState()
         let shadow = NSShadow()
-        shadow.shadowColor = NSColor.black.withAlphaComponent(0.10 * opacity)
-        shadow.shadowBlurRadius = max(1, iconSize.width * 0.008)
-        shadow.shadowOffset = NSSize(width: 0, height: -max(1, iconSize.width * 0.004))
+        shadow.shadowColor = NSColor.black.withAlphaComponent(Layout.shadowBaseAlpha * CGFloat(opacity))
+        shadow.shadowBlurRadius = max(Layout.minimumShadowMagnitude, iconSize.width * Layout.shadowBlurFraction)
+        shadow.shadowOffset = NSSize(width: 0, height: -max(Layout.minimumShadowMagnitude, iconSize.width * Layout.shadowOffsetFraction))
         shadow.set()
 
         if let gradientEnd {
@@ -344,7 +392,7 @@ struct IconRenderer {
             symbol.draw(in: symRect, from: .zero, operation: .sourceOver, fraction: CGFloat(opacity))
             if let gradient = NSGradient(starting: color.withAlphaComponent(CGFloat(opacity)),
                                           ending: gradientEnd.withAlphaComponent(CGFloat(opacity))) {
-                gradient.draw(in: symRect, angle: 90)
+                gradient.draw(in: symRect, angle: Layout.gradientAngle)
             }
             NSGraphicsContext.current?.restoreGraphicsState()
             // The gradient draw on top with sourceOver paints over the symbol shape only via clip;

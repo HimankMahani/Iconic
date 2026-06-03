@@ -9,6 +9,9 @@
 import AppKit
 import Foundation
 
+/// Codable bundle of one folder's icon settings (symbol + two colors).
+/// `NSColor` is encoded as an `NSKeyedArchiver` blob so the whole payload
+/// can live in a single pasteboard item.
 struct IconSettings: Codable {
     let symbolName: String
     let symbolColor: NSColor?
@@ -61,9 +64,12 @@ struct IconSettings: Codable {
     }
 }
 
+/// Thin wrapper around `NSPasteboard` for copying/pasting `IconSettings`
+/// between folders in the main window.
 enum IconClipboard {
     private static let pasteboardType = NSPasteboard.PasteboardType("com.iconic.iconSettings")
 
+    /// Replaces the current pasteboard contents with the encoded `IconSettings`.
     static func copy(_ settings: IconSettings) {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
@@ -73,6 +79,8 @@ enum IconClipboard {
         }
     }
 
+    /// Returns the pasted `IconSettings`, or nil if the pasteboard doesn't
+    /// contain an Iconic icon-settings item.
     static func paste() -> IconSettings? {
         let pasteboard = NSPasteboard.general
         guard let data = pasteboard.data(forType: pasteboardType),
@@ -82,6 +90,7 @@ enum IconClipboard {
         return settings
     }
 
+    /// True if the pasteboard currently holds an Iconic icon-settings item.
     static func hasContent() -> Bool {
         let pasteboard = NSPasteboard.general
         return pasteboard.data(forType: pasteboardType) != nil

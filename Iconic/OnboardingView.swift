@@ -8,6 +8,18 @@
 
 import SwiftUI
 
+/// First-launch onboarding sheet. Walks the user through a 4- or 5-page flow:
+/// 1. Welcome (with a before/after folder preview)
+/// 2. Icon style (SF Symbols vs emoji)
+/// 3. Matching mode (Local vs AI)
+/// 4. Either the Gemini API key entry page (if AI is selected) or the
+///    "you're ready" tips page
+/// 5. Tips page (only reached when AI is selected — page 4 then becomes the
+///    API key page and the tips move to page 5)
+///
+/// The AI-specific page is conditionally inserted, so total page count is 4
+/// for local-only and 5 for AI. On finish, the chosen style is written to
+/// `IconStyleStore` and the API key (if any) is saved via `SettingsViewModel`.
 struct OnboardingView: View {
 
     @Environment(\.dismiss) private var dismiss

@@ -10,6 +10,9 @@ import AppKit
 import SwiftUI
 import Combine
 
+/// Owns the menu bar (status bar) item shown when "Keep app in menu bar"
+/// is enabled in Preferences. Builds the dropdown menu, toggles the
+/// background-monitoring state, and bridges clicks to `AppDelegate`.
 @MainActor
 final class MenuBarManager: ObservableObject {
 
@@ -17,10 +20,14 @@ final class MenuBarManager: ObservableObject {
     @Published var isMenuBarMode: Bool = false
     private var isMonitoringActive: Bool = false
 
+    /// Loads the persisted menu-bar preference and, if enabled, installs the
+    /// status item immediately.
     init() {
         loadPreference()
     }
 
+    /// Creates the `NSStatusItem` (no-op if already installed), wires up its
+    /// button, and renders the initial menu based on the current monitoring state.
     func setup() {
         guard statusItem == nil else { return }
 
@@ -44,6 +51,9 @@ final class MenuBarManager: ObservableObject {
         statusItem?.menu?.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
     }
 
+    /// Updates the cached monitoring state and re-renders the icon and menu
+    /// to reflect it. Call this whenever background monitoring is toggled.
+    /// - Parameter active: Whether background monitoring is currently enabled.
     func updateMonitoringStatus(_ active: Bool) {
         isMonitoringActive = active
         updateMenuBarIcon()
@@ -63,6 +73,9 @@ final class MenuBarManager: ObservableObject {
         button.image?.isTemplate = true
     }
 
+    /// Rebuilds and installs the dropdown menu on the current status item.
+    /// Includes a status header, Show Window, background-monitoring toggle,
+    /// Preferences…, and Quit.
     func updateMenu() {
         let menu = NSMenu()
 
@@ -114,30 +127,39 @@ final class MenuBarManager: ObservableObject {
         statusItem?.menu = menu
     }
 
+    /// Menu action: brings the main window to the front via `AppDelegate`.
     @objc func showMainWindow() {
         NSApp.sendAction(#selector(AppDelegate.showMainWindow), to: nil, from: self)
     }
 
+    /// Menu action: opens the Preferences window and activates the app.
     @objc func showPreferences() {
         NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    /// Menu action: asks `AppDelegate` to flip background monitoring.
+    /// `AppDelegate` is expected to call back into `updateMonitoringStatus(_:)`
+    /// so the icon and menu refresh.
     @objc func toggleBackgroundMonitoring() {
         NSApp.sendAction(#selector(AppDelegate.toggleBackgroundMonitoring), to: nil, from: self)
         // AppDelegate will call updateMonitoringStatus(_:) to refresh icon/menu
     }
 
+    /// Menu action: terminates the app.
     @objc func quitApp() {
         NSApplication.shared.terminate(nil)
     }
 
+    /// Installs the status item (if not already) and persists the
+    /// "menu bar mode enabled" preference.
     func enable() {
         setup()
         isMenuBarMode = true
         savePreference()
     }
 
+    /// Removes the status item and persists the disabled preference.
     func disable() {
         if let item = statusItem {
             NSStatusBar.system.removeStatusItem(item)

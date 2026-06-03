@@ -7,6 +7,7 @@
 
 import SwiftUI
 
+/// One row in the keyboard-shortcut help overlay.
 struct KeyboardShortcut: Identifiable {
     let id = UUID()
     let category: String
@@ -15,6 +16,10 @@ struct KeyboardShortcut: Identifiable {
     let description: String
 }
 
+/// Searchable, categorized overlay listing every keyboard shortcut in the app.
+/// Opened with ⌘/ from the main window. Shortcuts are grouped by category
+/// (Navigation, Actions, Filters, Batch, General) and the search field filters
+/// across action, key combination, and description.
 struct KeyboardShortcutsView: View {
 
     @Environment(\.dismiss) private var dismiss

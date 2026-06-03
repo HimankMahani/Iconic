@@ -11,6 +11,8 @@ import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// Output formats supported by `IconMapExporter`. The raw value doubles
+/// as the user-facing label shown in the format picker.
 enum IconMapExportFormat: String, CaseIterable, Identifiable {
     case json = "JSON"
     case csv = "CSV"
@@ -18,6 +20,7 @@ enum IconMapExportFormat: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    /// File extension (without leading dot) for the saved file.
     var fileExtension: String {
         switch self {
         case .json: return "json"
@@ -26,6 +29,7 @@ enum IconMapExportFormat: String, CaseIterable, Identifiable {
         }
     }
 
+    /// Uniform Type Identifier used for the save panel and `FileDocument`.
     var contentType: UTType {
         switch self {
         case .json: return .json
@@ -35,6 +39,8 @@ enum IconMapExportFormat: String, CaseIterable, Identifiable {
     }
 }
 
+/// One row of the exported icon map. Colors are stored as hex strings
+/// so the file is portable and diff-friendly.
 struct IconMapEntry: Codable {
     let path: String
     let name: String
@@ -44,8 +50,12 @@ struct IconMapEntry: Codable {
     let status: String
 }
 
+/// Serializes a list of `IconMapEntry` (or a live `FolderItem` list) to
+/// JSON, CSV, or Markdown for the export action in the toolbar.
 enum IconMapExporter {
 
+    /// Projects a list of `FolderItem` into the exportable `IconMapEntry` form,
+    /// converting NSColors to hex and the status enum to a string.
     static func entries(from items: [FolderItem]) -> [IconMapEntry] {
         items.map { item in
             IconMapEntry(
@@ -59,6 +69,8 @@ enum IconMapExporter {
         }
     }
 
+    /// Encodes `entries` as the chosen format. Returns nil only if JSON
+    /// encoding fails; CSV/Markdown always succeed for valid input.
     static func export(_ entries: [IconMapEntry], as format: IconMapExportFormat) -> Data? {
         switch format {
         case .json:
@@ -135,6 +147,9 @@ enum IconMapExporter {
     }
 }
 
+/// `FileDocument` wrapper around an already-serialized `Data` blob.
+/// Used so the export action can use the system file exporter UI
+/// without re-running `IconMapExporter.export` on read.
 struct IconMapDocument: FileDocument {
     static var readableContentTypes: [UTType] { [.json, .commaSeparatedText, .plainText] }
 

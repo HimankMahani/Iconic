@@ -9,6 +9,24 @@
 import SwiftUI
 import AppKit
 
+/// Preferences window. A `TabView` over nine tabs:
+/// 1. **Gemini AI** — API key storage, AI on/off, content analysis toggle
+/// 2. **Appearance** — color palette, seasonal theme
+/// 3. **Background** — menu bar mode, background monitoring, notifications
+/// 4. **Mappings** — custom keyword → SF Symbol overrides
+/// 5. **Rules** — pattern/glob rules
+/// 6. **Templates** — style templates
+/// 7. **Detection** — smart content detection, exclude patterns, scan depth
+/// 8. **Presets** — save/load/import/export of full preset bundles
+/// 9. **Analytics** — local usage stats with a reset button
+///
+/// The top-of-window search bar filters tabs by mapping keywords in
+/// `settingsKeywords` to tab titles. When the user types, the search
+/// shows chips for which tabs match; clicking a chip focuses that tab.
+///
+/// `.onAppear` rehydrates every `@State` from its corresponding
+/// persistent store (SmartContentDetectionStore, BackgroundMonitoringStore,
+/// MenuBarManager, etc.) and populates default exclude patterns the first time.
 struct PreferencesView: View {
 
     @EnvironmentObject private var mappings: CustomMappingsStore

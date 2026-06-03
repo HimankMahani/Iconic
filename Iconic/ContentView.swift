@@ -30,6 +30,7 @@ struct ContentView: View {
     @State private var templateSourceItem: FolderItem?
     @State private var showingBackups = false
     @State private var newBackupName = ""
+    @State private var showingAbout = false
     @State private var comparisonItem: FolderItem? = nil
     @State private var quickLookURL: URL?
     @State private var quickLookURLs: [URL] = []
@@ -173,6 +174,9 @@ struct ContentView: View {
         .sheet(item: $comparisonItem) { item in
             ComparisonView(item: item)
         }
+        .sheet(isPresented: $showingAbout) {
+            AboutView()
+        }
         .quickLookPreview($quickLookURL, in: quickLookURLs)
     }
 
@@ -240,6 +244,7 @@ struct ContentView: View {
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Dismiss summary banner")
             }
             .padding(16)
             .background(.ultraThinMaterial)
@@ -399,6 +404,7 @@ struct ContentView: View {
                         }
                         .buttonStyle(.plain)
                         .help("Reveal in Finder")
+                        .accessibilityLabel("Reveal \(vm.rootURLs.count) selected folders in Finder")
                     }
                 } else if let root = vm.rootURL {
                     Button {
@@ -417,6 +423,8 @@ struct ContentView: View {
                     }
                     .buttonStyle(.plain)
                     .help("Reveal in Finder")
+                    .accessibilityLabel("Reveal \(root.lastPathComponent) in Finder")
+                    .accessibilityHint("Opens the folder in a Finder window")
                 } else {
                     Text("No folder selected")
                         .font(.caption)
@@ -449,6 +457,7 @@ struct ContentView: View {
             }
             .buttonStyle(.borderless)
             .help("Keyboard Shortcuts (\u{2318}/)")
+            .accessibilityLabel("Show keyboard shortcuts")
 
             Button {
                 showingDiscoveryPanel = true
@@ -457,6 +466,7 @@ struct ContentView: View {
             }
             .buttonStyle(.borderless)
             .help("Discover Features")
+            .accessibilityLabel("Discover features")
             .popover(isPresented: $showingDiscoveryPanel, arrowEdge: .top) {
                 FeatureDiscoveryPanel(isShown: $showingDiscoveryPanel) { action in
                     showingDiscoveryPanel = false
@@ -540,6 +550,8 @@ struct ContentView: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .help("Recent folders and favorites")
+        .accessibilityLabel("Recent folders and favorites")
+        .accessibilityValue("\(recentFolders.count) recent, \(favoriteFolders.count) favorites")
     }
 
     private func openRecent(_ recent: RecentFolder) {
@@ -562,6 +574,8 @@ struct ContentView: View {
     /// into a single affordance. Keeps the header toolbar uncluttered.
     private var headerOverflowMenu: some View {
         Menu {
+            Button("About Iconic…") { showingAbout = true }
+            Divider()
             if !favoriteFolders.isEmpty {
                 Section("Favorites") {
                     ForEach(favoriteFolders) { fav in
@@ -615,6 +629,8 @@ struct ContentView: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .help("Recents, favorites, backups, export")
+        .accessibilityLabel("More options")
+        .accessibilityHint("Shows recents, favorites, backups, and export menu")
     }
 
     @ViewBuilder
@@ -692,6 +708,7 @@ struct ContentView: View {
                             .font(.system(size: 13))
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Clear search")
                 }
             }
             .padding(.horizontal, 8)
@@ -939,6 +956,7 @@ struct ContentView: View {
                         }
                         .buttonStyle(.plain)
                         .help("Dismiss")
+                        .accessibilityLabel("Dismiss error message")
                     }
                 } else if let err = vm.lastError {
                     Text(err)
@@ -1115,6 +1133,7 @@ struct ContentView: View {
                             }
                             .controlSize(.small)
                             .buttonStyle(.borderless)
+                            .accessibilityLabel("Delete backup snapshot \(snapshot.name)")
                         }
                         .padding(.vertical, 4)
                     }
@@ -1179,6 +1198,7 @@ struct FeatureDiscoveryPanel: View {
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Close discover features")
             }
             .padding(12)
 

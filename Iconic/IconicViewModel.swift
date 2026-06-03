@@ -11,6 +11,9 @@ import AppKit
 import SwiftUI
 import Combine
 
+/// Lifecycle states a single folder row moves through from initial scan to
+/// apply/restore. Stored on `FolderItem.status` and rendered in the row's
+/// status badge.
 enum FolderItemStatus: Equatable {
     case pending
     case applying
@@ -21,9 +24,16 @@ enum FolderItemStatus: Equatable {
 
 /// Rich error context for surfacing actionable, user-friendly messages in the UI.
 struct ErrorInfo {
+    /// Headline shown to the user. Plain text, no markdown.
     let message: String
+    /// Optional follow-up explaining how to fix the problem. Shown beneath
+    /// the message in the footer.
     let suggestion: String?
+    /// When true, the footer surfaces a Retry button that re-runs the last
+    /// scan. Set to false for non-recoverable states (e.g. invalid API key).
     let canRetry: Bool
+    /// Distinguishes recoverable warnings (true) from blocking errors
+    /// (false) so the footer can pick the right visual treatment.
     let isWarning: Bool
 
     init(message: String, suggestion: String? = nil, canRetry: Bool = false, isWarning: Bool = false) {
@@ -34,17 +44,29 @@ struct ErrorInfo {
     }
 }
 
+/// Aggregate result of a batch Apply All / Restore All. Shown briefly in a
+/// summary sheet after the batch finishes; the user dismisses it manually
+/// or it auto-hides after a short delay.
 struct BatchSummary {
-    let operation: String // "Applied" or "Restored"
+    /// Human-readable verb for the operation, e.g. "Applied" or "Restored".
+    let operation: String
+    /// Number of items that ended in `.applied` / `.restored`.
     let succeeded: Int
+    /// Number of items that ended in `.failed`.
     let failed: Int
+    /// Wall-clock time the batch took, in seconds.
     let duration: TimeInterval
+    /// When the batch finished. Used for ordering and display in history.
     let timestamp: Date
 
     var total: Int { succeeded + failed }
     var hasFailures: Bool { failed > 0 }
 }
 
+/// How a `FolderItem`'s symbol was resolved. Drives the match-source badge
+/// in the row UI and the filter chips above the list. The cases' visual
+/// metadata (`displayName`, `icon`, `color`) describe how each source is
+/// presented to the user.
 enum MatchSource: Equatable {
     case rule(ruleName: String)
     case smartDetection(type: String)
@@ -98,8 +120,29 @@ enum MatchSource: Equatable {
     }
 }
 
+/// One row in the folder list. Owns the URL, the resolved symbol/colors,
+/// the rendered preview, and the live adjustment sliders. All mutations
+/// publish via `@Published` so SwiftUI rows can observe them directly. The
+/// view model (`IconicViewModel`) creates instances during scan and mutates
+/// them during apply/restore; the row view binds to the `@Published`
+/// properties for the adjustment sliders.
 @MainActor
 final class FolderItem: ObservableObject, Identifiable {
+
+    // MARK: - Defaults (shared with FolderRowView.resetAdjustments)
+
+    /// Default opacity for a freshly-created folder row. Mirrored by
+    /// FolderRowView's resetAdjustments.
+    static let defaultSymbolOpacity: Double = 1.0
+
+    /// Default scale for a freshly-created folder row. Mirrored by
+    /// FolderRowView's resetAdjustments.
+    static let defaultSymbolScale: Double = 1.0
+
+    /// Default vertical offset for a freshly-created folder row. Mirrored
+    /// by FolderRowView's resetAdjustments.
+    static let defaultSymbolOffsetY: Double = 0.0
+
     let id = UUID()
     let url: URL
     @Published var symbolNames: [String] = []
@@ -108,9 +151,9 @@ final class FolderItem: ObservableObject, Identifiable {
     @Published var preview: NSImage?
     @Published var originalIcon: NSImage?
     @Published var status: FolderItemStatus = .pending
-    @Published var symbolOpacity: Double = 1.0
-    @Published var symbolScale: Double = 1.0
-    @Published var symbolOffsetY: Double = 0.0
+    @Published var symbolOpacity: Double = Self.defaultSymbolOpacity
+    @Published var symbolScale: Double = Self.defaultSymbolScale
+    @Published var symbolOffsetY: Double = Self.defaultSymbolOffsetY
     @Published var customImage: NSImage?
     @Published var symbolGradientEnd: NSColor?
     @Published var matchSource: MatchSource = .localDictionary
@@ -166,8 +209,23 @@ final class FolderItem: ObservableObject, Identifiable {
     }
 }
 
+/// Central coordinator for the app. Owns the scanned folder tree, drives
+/// the scan → match → render → apply/restore pipeline, and brokers UI
+/// state (selection, search/filter, toasts, batch progress) to SwiftUI
+/// views. All published state is mutated on the main actor.
 @MainActor
 final class IconicViewModel: ObservableObject {
+
+    // MARK: - Sentinel values
+
+    /// "Unassigned" sentinel: passing these opacity/scale/offsetY values to
+    /// IconRenderer.makeIcon tells it to render a plain folder with no
+    /// symbol layer. Used by the row-init and post-edit render paths.
+    private enum RendererSentinel {
+        static let opacity: Double = 0
+        static let scale: Double = 0
+        static let offsetY: Double = 0
+    }
 
     @Published var rootURLs: [URL] = []
     @Published var items: [FolderItem] = []
@@ -204,6 +262,8 @@ final class IconicViewModel: ObservableObject {
 
     // MARK: - Toast notifications
 
+    /// Visual style for the transient toast banner shown via `showToast`.
+    /// Drives color and SF Symbol for the four supported notification kinds.
     enum ToastType {
         case info, success, warning, learning
     }
@@ -259,11 +319,17 @@ final class IconicViewModel: ObservableObject {
     let undoManager = IconicUndoManager()
     private var lastSelectedItem: FolderItem?
 
+    /// Which matcher the most recent scan used. `.ai` means Gemini was
+    /// called (or attempted and fell back to local); `.local` means the
+    /// local dictionary / smart-detection path ran without AI.
     enum MatchingMode {
         case local
         case ai
     }
 
+    /// Filter chip shown above the folder list. `.unmapped` is the
+    /// user-facing name for folders the matcher couldn't resolve (see
+    /// `FolderItem.isUnassigned`).
     enum StatusFilter: String, CaseIterable {
         case all = "All"
         case applied = "Applied"
@@ -274,6 +340,8 @@ final class IconicViewModel: ObservableObject {
         case unmapped = "Unmapped"
     }
 
+    /// Items the list view should currently display: the result of applying
+    /// `searchText` and `statusFilter` to `items`. Recomputed every render.
     var filteredItems: [FolderItem] {
         var result = items
 
@@ -345,11 +413,15 @@ final class IconicViewModel: ObservableObject {
         for i in range { selectedItemIDs.insert(visible[i].id) }
     }
 
+    /// Select every currently visible item (respecting `searchText` and
+    /// `statusFilter`). Anchors the shift-selection range to the last
+    /// visible row.
     func selectAllVisible() {
         selectedItemIDs = Set(filteredItems.map { $0.id })
         lastSelectedItem = filteredItems.last
     }
 
+    /// Drop the current selection. Used by Esc and by the Clear menu item.
     func clearSelection() {
         selectedItemIDs.removeAll()
         lastSelectedItem = nil
@@ -380,10 +452,14 @@ final class IconicViewModel: ObservableObject {
 
     // MARK: - Batch actions on selection
 
+    /// Apply the current selection one folder at a time. Each apply is
+    /// recorded for undo; failures stay on the per-row status badge.
     func applySelected() {
         for item in selectedItems { apply(item) }
     }
 
+    /// Restore the current selection to the system default folder icon.
+    /// Each restore is recorded for undo.
     func restoreSelected() {
         for item in selectedItems { restore(item) }
     }
@@ -407,6 +483,8 @@ final class IconicViewModel: ObservableObject {
         rerender(item)
     }
 
+    /// Apply the last copied icon settings (see `copyIconSettings`) to every
+    /// currently selected item. No-op if the clipboard is empty.
     func pasteIconSettingsToSelected() {
         guard let settings = IconClipboard.paste() else { return }
         for item in selectedItems {
@@ -419,6 +497,9 @@ final class IconicViewModel: ObservableObject {
 
     // MARK: - Undo / Redo
 
+    /// Undo the most recent recorded apply/restore. Wraps
+    /// `IconicUndoManager.undo` with the closures needed to re-invoke
+    /// `apply` / `restore` from this view model.
     func performUndo() {
         undoManager.undo(
             items: items,
@@ -427,6 +508,7 @@ final class IconicViewModel: ObservableObject {
         )
     }
 
+    /// Redo the most recently undone apply/restore. Mirrors `performUndo`.
     func performRedo() {
         undoManager.redo(
             items: items,
@@ -456,6 +538,8 @@ final class IconicViewModel: ObservableObject {
 
     // MARK: - Folder selection
 
+    /// Show an NSOpenPanel and, on OK, hand the chosen folders to
+    /// `adoptRoots(_:)`. Allows multiple selection.
     func chooseFolder() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
@@ -468,6 +552,9 @@ final class IconicViewModel: ObservableObject {
         }
     }
 
+    /// Re-open the most recently used folder from the saved security-scoped
+    /// bookmark. No-op if no bookmark exists or the bookmark can't be
+    /// resolved.
     func restoreLastFolderIfAvailable() {
         guard let resolved = BookmarkStore.resolve() else { return }
         if resolved.didStartAccessing {
@@ -477,10 +564,15 @@ final class IconicViewModel: ObservableObject {
         rootURLs = [resolved.url]
     }
 
+    /// Adopt a single root URL. Equivalent to `adoptRoots([url])` and used
+    /// by the single-folder flows.
     func adoptRoot(_ url: URL) {
         adoptRoots([url])
     }
 
+    /// Adopt a set of root URLs: stops any active watcher, releases the
+    /// prior security scope, saves a bookmark for the first URL, and kicks
+    /// off `scanMultipleRoots` to scan and render the new tree.
     func adoptRoots(_ urls: [URL]) {
         guard !urls.isEmpty else { return }
 
@@ -598,6 +690,10 @@ final class IconicViewModel: ObservableObject {
         }
     }
 
+    /// Scan a single root URL, match each subfolder to a symbol (AI if a
+    /// key is configured, otherwise local), and render the previews. Sets
+    /// `isScanning` and updates `scanFoundCount` / `scanCurrentPath` as it
+    /// progresses; auto-applies any rules that opted in.
     func scan(_ root: URL) async {
         isScanning = true
         scanFoundCount = 0
@@ -771,6 +867,10 @@ final class IconicViewModel: ObservableObject {
         return localGlyph(for: folderName, customMappings: customMappings)
     }
 
+    /// Maps a `FolderTypeDetector` result to the current icon style. In
+    /// SF Symbol mode the detected symbol is returned as-is. In emoji mode
+    /// the well-known dev-tool symbols are rewritten to their emoji
+    /// equivalents and anything unknown falls back to `localGlyph`.
     private static func smartDetectionGlyph(for detectedSymbol: String, folderName: String, customMappings: [String: String]) -> String? {
         guard IconStyleStore.current == .emoji else { return detectedSymbol }
         switch detectedSymbol {
@@ -873,7 +973,7 @@ final class IconicViewModel: ObservableObject {
                     // glyph is renderable for the current style. Below 0.7 we
                     // treat the folder as unassigned so the user can pick a
                     // symbol manually instead of getting a generic "folder.fill".
-                    if matchResult.confidence >= 0.7, Self.isValidAIGlyph(matchResult.symbol) {
+                    if matchResult.confidence >= SymbolSearchEngine.minimumConfidence, Self.isValidAIGlyph(matchResult.symbol) {
                         return Self.makeItem(
                             url: url,
                             glyph: matchResult.symbol,
@@ -1033,9 +1133,9 @@ final class IconicViewModel: ObservableObject {
                         symbolNames: [],
                         tint: p.color,
                         folderTint: nil,
-                        opacity: 0,
-                        scale: 0,
-                        offsetY: 0,
+                        opacity: RendererSentinel.opacity,
+                        scale: RendererSentinel.scale,
+                        offsetY: RendererSentinel.offsetY,
                         gradientEnd: nil,
                         customImage: nil
                     )
@@ -1105,7 +1205,7 @@ final class IconicViewModel: ObservableObject {
                         learningExamples: learningExamples,
                         contentAnalysis: nil
                     )
-                    if let match = matches[name], match.confidence >= 0.7, Self.isValidAIGlyph(match.symbol) {
+                    if let match = matches[name], match.confidence >= SymbolSearchEngine.minimumConfidence, Self.isValidAIGlyph(match.symbol) {
                         newSymbol = match.symbol
                         newSource = .aiSuggestion(confidence: match.confidence)
                     } else {
@@ -1232,9 +1332,9 @@ final class IconicViewModel: ObservableObject {
                     symbolNames: [],
                     tint: color,
                     folderTint: nil,
-                    opacity: 0,
-                    scale: 0,
-                    offsetY: 0,
+                    opacity: RendererSentinel.opacity,
+                    scale: RendererSentinel.scale,
+                    offsetY: RendererSentinel.offsetY,
                     gradientEnd: nil,
                     customImage: nil
                 )
@@ -1289,6 +1389,11 @@ final class IconicViewModel: ObservableObject {
 
     // MARK: - Apply / restore
 
+    /// Render `item` to a real folder icon and write it to disk via
+    /// `IconApplier`. Unassigned items are skipped (status set back to
+    /// `.pending`). On success the action is recorded for undo and the
+    /// item is briefly flagged in `recentlyAppliedItemIDs` for the row
+    /// success animation.
     func apply(_ item: FolderItem) {
         // Unassigned items have no symbol to apply. Leave the folder alone
         // (no custom icon gets written) and surface the state in the status
@@ -1363,6 +1468,10 @@ final class IconicViewModel: ObservableObject {
         hasActiveFilter ? filteredItems : items
     }
 
+    /// Apply every item in `batchTargets` (filtered if the user has
+    /// narrowed the list, otherwise all items). Skips unassigned items and
+    /// surfaces SIP-protected folders up front. Drives progress, ETA, and
+    /// the post-batch `BatchSummary`.
     func applyAll() {
         // Drop unassigned items up front — they have no symbol, so applying
         // would write a plain folder (or nothing) and there's no point
@@ -1527,6 +1636,9 @@ final class IconicViewModel: ObservableObject {
         }
     }
 
+    /// Restore every item in `batchTargets` back to the system default
+    /// folder icon. Skips SIP-protected folders; surfaces a `BatchSummary`
+    /// when the batch finishes. Cancellable via `cancelBatch`.
     func restoreAll() {
         let snapshot = batchTargets
         guard !snapshot.isEmpty else { return }

@@ -10,6 +10,18 @@ matching SF Symbol — based on the folder's name.
 
 ![Iconic main window](https://raw.githubusercontent.com/HimankMahani/Iconic/main/docs/screenshots/main-window.png)
 
+Customized folders in Finder — each folder gets a unique icon and color:
+
+![Finder after applying icons](https://raw.githubusercontent.com/HimankMahani/Iconic/main/docs/screenshots/after-finder.png)
+
+Emoji icon mode — use emoji instead of SF Symbols:
+
+![Emoji icon mode](https://raw.githubusercontent.com/HimankMahani/Iconic/main/docs/screenshots/app-emoji-mode.png)
+
+Optional Gemini AI integration for smarter matching:
+
+![Settings - Gemini AI](https://raw.githubusercontent.com/HimankMahani/Iconic/main/docs/screenshots/settings-gemini.png)
+
 ## Why Iconic?
 
 Default macOS folders all look the same. Iconic makes your project directories

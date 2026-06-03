@@ -1,12 +1,20 @@
-# Iconic
+<p align="center">
+  <img src="https://raw.githubusercontent.com/HimankMahani/Iconic/main/docs/screenshots/app-icon.png" alt="Iconic app icon" width="128">
+</p>
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/Platform-macOS%2014+-lightgrey.svg)]()
-[![Tests](https://img.shields.io/badge/Tests-231-brightgreen.svg)]()
+<h1 align="center">Iconic</h1>
 
-Pretty up your folders. Iconic scans a directory tree and assigns each subfolder
-a custom icon — composited from the default macOS folder graphic plus a
-matching SF Symbol — based on the folder's name.
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
+  <img src="https://img.shields.io/badge/Platform-macOS%2014+-lightgrey.svg" alt="Platform">
+  <img src="https://img.shields.io/badge/Tests-231-brightgreen.svg" alt="Tests">
+</p>
+
+<p align="center">
+  Pretty up your folders. Iconic scans a directory tree and assigns each subfolder
+  a custom icon — composited from the default macOS folder graphic plus a
+  matching SF Symbol — based on the folder's name.
+</p>
 
 ![Iconic main window](https://raw.githubusercontent.com/HimankMahani/Iconic/main/docs/screenshots/main-window.png)
 

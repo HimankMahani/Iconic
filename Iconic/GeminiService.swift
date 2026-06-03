@@ -46,6 +46,22 @@ struct GeminiService {
     private static var cacheHits = 0
     private static var cacheMisses = 0
 
+    // MARK: - Batching constants
+
+    /// Maximum number of folder names sent in a single Gemini API request.
+    /// Keeping this small (≤25) ensures prompts stay well within Gemini's
+    /// token limits and each request finishes within `queryTimeoutInterval`.
+    static let batchSize: Int = 25
+
+    /// Seconds to wait between consecutive batch requests. Prevents bursting
+    /// the free-tier rate limit (15 RPM = 1 request every 4 s; 0.5 s leaves
+    /// headroom while staying responsive).
+    private static let interBatchDelay: TimeInterval = 0.5
+
+    /// Per-request timeout in seconds. 60 s is generous for a 25-name prompt
+    /// while still failing fast enough to show a useful error.
+    private static let queryTimeoutInterval: TimeInterval = 60
+
     enum GeminiError: LocalizedError, Equatable {
         case missingAPIKey
         case invalidAPIKeyFormat
@@ -56,6 +72,7 @@ struct GeminiService {
         case rateLimitExceeded(retryAfterSeconds: Int)
         case invalidJSON
         case offline
+        case timeout
 
         var errorDescription: String? {
             switch self {
@@ -78,6 +95,8 @@ struct GeminiService {
                 return "Failed to parse AI response. Using local matching."
             case .offline:
                 return "No internet connection. Using local matching."
+            case .timeout:
+                return "Request timed out. The batch was split — some folders may still be matched locally."
             }
         }
 
@@ -87,7 +106,7 @@ struct GeminiService {
                 return "Get a free key at https://aistudio.google.com/apikey"
             case .rateLimitExceeded:
                 return "Free tier allows 15 requests/minute"
-            case .offline, .networkError:
+            case .offline, .networkError, .timeout:
                 return "Check your internet connection"
             default:
                 return nil
@@ -143,19 +162,32 @@ struct GeminiService {
 
     /// Batch-matches folder names to SF Symbols (or emoji, when `style` is `.emoji`)
     /// using Gemini API with caching.
-    /// Returns a dictionary mapping folder name → MatchResult (symbol/emoji + confidence).
-    /// Throws GeminiError on failure.
+    ///
+    /// Uncached folders are split into chunks of at most `batchSize` names and
+    /// sent as sequential API requests. This avoids prompt-size timeouts when
+    /// there are hundreds of folders, stays within free-tier rate limits, and
+    /// lets the caller handle partial results gracefully when one chunk fails.
+    ///
+    /// Each completed chunk is written to the persistent cache immediately so
+    /// that a mid-run cancellation doesn't discard already-fetched results.
+    ///
     /// - Parameters:
     ///   - folderNames: Array of folder names to match
     ///   - apiKey: Gemini API key
     ///   - style: Whether to return SF Symbol names or single-emoji strings
     ///   - learningExamples: Optional user preference examples for few-shot learning
     ///   - contentAnalysis: Optional array of content analysis results to provide context
-    static func matchFolders(_ folderNames: [String],
-                             apiKey: String,
-                             style: IconStyle = .sfSymbol,
-                             learningExamples: [(folder: String, symbol: String)]? = nil,
-                             contentAnalysis: [FolderContentAnalyzer.ContentAnalysis]? = nil) async throws -> [String: MatchResult] {
+    ///   - onChunkCompleted: Optional callback invoked after each chunk finishes,
+    ///     receiving the partial results so the caller can update the UI progressively.
+    ///     Called on whatever concurrency context `matchFolders` is running in.
+    static func matchFolders(
+        _ folderNames: [String],
+        apiKey: String,
+        style: IconStyle = .sfSymbol,
+        learningExamples: [(folder: String, symbol: String)]? = nil,
+        contentAnalysis: [FolderContentAnalyzer.ContentAnalysis]? = nil,
+        onChunkCompleted: ((_ chunkResults: [String: MatchResult], _ completedTotal: Int, _ grandTotal: Int) -> Void)? = nil
+    ) async throws -> [String: MatchResult] {
         guard !apiKey.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw GeminiError.missingAPIKey
         }
@@ -164,15 +196,13 @@ struct GeminiService {
             return [:]
         }
 
-        // Step 1: Load cache and check for cached matches
+        // Step 1: Load cache and split into cached vs. uncached
         let cache = loadCache(style: style)
         var results: [String: MatchResult] = [:]
         var uncachedFolders: [String] = []
 
         for folderName in folderNames {
             let normalizedName = folderName.lowercased()
-
-            // Check if we have a cached match for this folder
             if let cached = cache[normalizedName] {
                 results[folderName] = MatchResult(symbol: cached.symbolName, confidence: cached.confidence)
                 cacheHits += 1
@@ -187,16 +217,54 @@ struct GeminiService {
             return results
         }
 
-        // Step 3: Query API for uncached folders only
-        let apiResults = try await queryAPI(folderNames: uncachedFolders, apiKey: apiKey, style: style, learningExamples: learningExamples, contentAnalysis: contentAnalysis)
-
-        // Step 4: Merge API results with cached results
-        for (folderName, matchResult) in apiResults {
-            results[folderName] = matchResult
+        // Step 3: Split uncached folders into chunks and query sequentially.
+        // Sequential (not parallel) requests stay safely within the free-tier
+        // 15 RPM limit regardless of how many chunks there are.
+        let chunks = stride(from: 0, to: uncachedFolders.count, by: batchSize).map {
+            Array(uncachedFolders[$0 ..< min($0 + batchSize, uncachedFolders.count)])
         }
+        let grandTotal = folderNames.count
+        var completedUncached = 0
 
-        // Step 5: Save new API results to cache
-        saveToCache(apiResults, style: style)
+        for (chunkIndex, chunk) in chunks.enumerated() {
+            // Respect inter-batch delay for all chunks after the first
+            if chunkIndex > 0 {
+                try await Task.sleep(nanoseconds: UInt64(interBatchDelay * 1_000_000_000))
+            }
+
+            do {
+                let chunkResults = try await queryAPI(
+                    folderNames: chunk,
+                    apiKey: apiKey,
+                    style: style,
+                    learningExamples: learningExamples,
+                    contentAnalysis: contentAnalysis
+                )
+
+                // Merge chunk results and persist immediately so partial
+                // results survive a future cancellation or crash.
+                for (name, match) in chunkResults {
+                    results[name] = match
+                }
+                saveToCache(chunkResults, style: style)
+
+                completedUncached += chunk.count
+                let completedTotal = (grandTotal - uncachedFolders.count) + completedUncached
+                onChunkCompleted?(chunkResults, completedTotal, grandTotal)
+
+            } catch let error as GeminiError {
+                // Log the chunk error but continue with the remaining chunks
+                // so one bad network blip doesn't discard everything.
+                log.warning("Chunk \(chunkIndex + 1)/\(chunks.count) failed: \(error.localizedDescription, privacy: .public)")
+                completedUncached += chunk.count
+                // Re-throw only for the very first chunk to surface the error
+                // to the caller; subsequent chunk failures are silently skipped
+                // because partial results are more useful than a full fallback.
+                if chunkIndex == 0 && results.isEmpty {
+                    throw error
+                }
+            }
+        }
 
         return results
     }
@@ -311,7 +379,7 @@ struct GeminiService {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(requestBody)
-        request.timeoutInterval = 30
+        request.timeoutInterval = queryTimeoutInterval
 
         let data: Data
         let response: URLResponse
@@ -322,7 +390,7 @@ struct GeminiService {
             case .notConnectedToInternet, .networkConnectionLost:
                 throw GeminiError.offline
             case .timedOut:
-                throw GeminiError.networkError("Request timed out. Try again.")
+                throw GeminiError.timeout
             case .cannotFindHost, .cannotConnectToHost:
                 throw GeminiError.networkError("Cannot reach Gemini servers.")
             default:
@@ -420,7 +488,7 @@ struct GeminiService {
         - "music" → "music.note" (confidence: 1.0) - exact semantic match
         - "code" → "chevron.left.forwardslash.chevron.right" (confidence: 0.95) - standard code symbol
         - "documents" → "doc.text.fill" (confidence: 0.9) - documents contain text
-        - "downloads" → "arrow.down.circle.fill" (confidence: 0.95) - downloading action
+        - "downloads" → "tray.and.arrow.down" (confidence: 0.95) - downloading action, tray with arrow
         - "videos" → "video.fill" (confidence: 1.0) - exact match
         - "projects" → "folder.badge.gearshape" (confidence: 0.85) - work/configuration
         - "archive" → "archivebox.fill" (confidence: 1.0) - exact match

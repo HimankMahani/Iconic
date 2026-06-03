@@ -4,11 +4,11 @@ Run the app fresh and walk through every section. Check off each box as you go. 
 
 **Setup tip:** to test onboarding/first-run, reset state first:
 ```bash
-defaults delete com.app.Iconic 2>/dev/null
-defaults delete com.app.Iconic.gemini 2>/dev/null
-# Also reset the @AppStorage flag specifically:
-defaults delete com.app.Iconic iconic.onboardingCompleted
-defaults delete com.app.Iconic iconic.excludePatterns.populatedDefaults
+# Reset onboarding for all possible bundle identifiers
+for domain in app.iconic.Iconic com.app.Iconic com.himank.Iconic com.iconic.app; do
+  defaults write "$domain" iconic.onboardingCompleted -bool false
+  defaults delete "$domain" iconic.excludePatterns.populatedDefaults 2>/dev/null
+done
 ```
 Then build & launch: `xcodebuild -project Iconic.xcodeproj -scheme Iconic -derivedDataPath /tmp/iconic-build && open /tmp/iconic-build/Build/Products/Debug/Iconic.app`
 
@@ -27,12 +27,14 @@ touch ~/Desktop/IconicTest/Code/MyApp/.git
 - [ ] Intro section shows before/after folder icons
 - [ ] **Drag & Drop tip panel** is visible (blue, `hand.draw` icon)
 - [ ] **Icon Style picker** lets you choose Emoji vs SF Symbol — selection persists
+- [ ] Icon Style cards are fully clickable (entire card area, not just the folder icon)
 - [ ] **Matching mode section** shows AI vs Local; AI reveals an API key input field
+- [ ] Matching mode cards are fully clickable (entire card area, not just the icon/text)
 - [ ] **Dry Run safety section** is visible (green, `eye` icon) — explains preview mode
 - [ ] **SIP warning section** is visible (orange, `lock.shield` icon)
 - [ ] "Skip for Now" button dismisses the sheet
 - [ ] Quit & relaunch → onboarding does **not** show again
-- [ ] Reset (`defaults delete com.app.Iconic iconic.onboardingCompleted`) → onboarding shows again
+- [ ] Reset (run the setup tip command above) → onboarding shows again
 
 ---
 

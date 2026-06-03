@@ -389,6 +389,7 @@ struct OnboardingView: View {
                 }
             }
             .padding(12)
+            .contentShape(Rectangle())
             .background(selectedMode == mode ? Color.accentColor.opacity(0.1) : Color.clear)
             .cornerRadius(8)
             .overlay(
@@ -439,6 +440,7 @@ struct OnboardingView: View {
             }
             .frame(maxWidth: .infinity, minHeight: 170)
             .padding(12)
+            .contentShape(Rectangle())
             .background(selectedStyle == style ? Color.accentColor.opacity(0.1) : Color.clear)
             .cornerRadius(8)
             .overlay(

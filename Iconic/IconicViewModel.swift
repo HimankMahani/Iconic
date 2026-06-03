@@ -260,6 +260,11 @@ final class IconicViewModel: ObservableObject {
     /// be modified.
     @Published var sipProtectedCount: Int = 0
 
+    /// Progress of the current AI chunked-matching pass.
+    /// `nil` when no AI scan is in progress; otherwise contains the number of
+    /// folders matched so far and the grand total.
+    @Published var aiProgress: (completed: Int, total: Int)?
+
     // MARK: - Toast notifications
 
     /// Visual style for the transient toast banner shown via `showToast`.
@@ -906,7 +911,6 @@ final class IconicViewModel: ObservableObject {
         let learningExamples = learningStore?.getAllExamples(limit: 20)
 
         // Analyze folder contents if AI Content Analysis is enabled
-        // This provides additional context to improve AI matching accuracy
         var contentAnalysis: [FolderContentAnalyzer.ContentAnalysis]? = nil
         if AIContentAnalysisStore.isEnabled {
             contentAnalysis = await Task.detached(priority: .userInitiated) {
@@ -920,79 +924,88 @@ final class IconicViewModel: ObservableObject {
         // folders were served from the cache vs. fetched from the API.
         let cacheEntriesBefore = GeminiService.getCacheStats().totalEntries
 
-        do {
-            let geminiMatches = try await GeminiService.matchFolders(folderNames, apiKey: apiKey, style: iconStyle, learningExamples: learningExamples, contentAnalysis: contentAnalysis)
+        // Helper that turns a Gemini MatchResult dict into FolderItems,
+        // honoring the same rule → smart detection → custom → AI priority.
+        func makeItems(from geminiMatches: [String: GeminiService.MatchResult], for targetURLs: [URL]) -> [FolderItem] {
+            targetURLs.map { url in
+                let name = url.lastPathComponent
+                if let rule = rulesStore?.firstMatch(for: name),
+                   let glyph = Self.glyphForCurrentStyle(folderName: name, proposedGlyph: rule.symbol, customMappings: customMappings) {
+                    return Self.makeItem(url: url, glyph: glyph,
+                                        ruleSymbolColor: rule.symbolColor, ruleFolderColor: rule.folderColor,
+                                        source: .rule(ruleName: rule.name), trackAISuggestion: false, aiSymbol: nil)
+                } else if SmartContentDetectionStore.isEnabled,
+                          let detectedSym = FolderTypeDetector.detectType(at: url),
+                          let glyph = Self.smartDetectionGlyph(for: detectedSym, folderName: name, customMappings: customMappings) {
+                    return Self.makeItem(url: url, glyph: glyph,
+                                        ruleSymbolColor: nil, ruleFolderColor: nil,
+                                        source: .smartDetection(type: Self.smartDetectionTypeDescription(for: detectedSym)),
+                                        trackAISuggestion: false, aiSymbol: nil)
+                } else if let customSym = customMappings[name.lowercased()],
+                          let glyph = Self.glyphForCurrentStyle(folderName: name, proposedGlyph: customSym, customMappings: customMappings) {
+                    return Self.makeItem(url: url, glyph: glyph,
+                                        ruleSymbolColor: nil, ruleFolderColor: nil,
+                                        source: .customMapping, trackAISuggestion: false, aiSymbol: nil)
+                } else if let matchResult = geminiMatches[name],
+                          matchResult.confidence >= SymbolSearchEngine.minimumConfidence,
+                          Self.isValidAIGlyph(matchResult.symbol) {
+                    return Self.makeItem(url: url, glyph: matchResult.symbol,
+                                        ruleSymbolColor: nil, ruleFolderColor: nil,
+                                        source: .aiSuggestion(confidence: matchResult.confidence),
+                                        trackAISuggestion: true, aiSymbol: matchResult.symbol)
+                } else {
+                    return FolderItem.unassigned(url: url)
+                }
+            }
+        }
 
-            // Compute per-scan cache info: any folder that did NOT add a new
-            // cache entry was a hit (already cached). New entries equal misses.
+        aiProgress = (completed: 0, total: folderNames.count)
+        defer { aiProgress = nil }
+
+        // Accumulates all Gemini matches as chunks complete
+        var allGeminiMatches: [String: GeminiService.MatchResult] = [:]
+
+        do {
+            _ = try await GeminiService.matchFolders(
+                folderNames,
+                apiKey: apiKey,
+                style: iconStyle,
+                learningExamples: learningExamples,
+                contentAnalysis: contentAnalysis
+            ) { [weak self] chunkResults, completedTotal, grandTotal in
+                guard let self else { return }
+
+                // Merge chunk into the running accumulator
+                for (k, v) in chunkResults { allGeminiMatches[k] = v }
+
+                // Build items for ALL urls using the matches seen so far,
+                // then render previews for the newly-arrived chunk.
+                let newItems = makeItems(from: allGeminiMatches, for: urls)
+                let chunkURLs = urls.filter { chunkResults[$0.lastPathComponent] != nil }
+
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.items = newItems
+                    self.aiProgress = (completed: completedTotal, total: grandTotal)
+                    // Render previews only for the items that just arrived
+                    let chunkItems = newItems.filter { item in
+                        chunkURLs.contains(item.url)
+                    }
+                    await self.renderPreviews(for: chunkItems)
+                }
+            }
+
+            // Final pass: build items for all urls with the complete match set
+            let finalItems = makeItems(from: allGeminiMatches, for: urls)
+
+            // Compute cache info
             let cacheEntriesAfter = GeminiService.getCacheStats().totalEntries
             let newEntries = max(0, cacheEntriesAfter - cacheEntriesBefore)
             let totalCount = folderNames.count
             let hitCount = max(0, totalCount - newEntries)
             lastCacheInfo = CacheInfo(hitCount: hitCount, totalCount: totalCount)
 
-            let newItems: [FolderItem] = urls.map { url in
-                let name = url.lastPathComponent
-
-                // Highest priority: user-defined rules
-                if let rule = rulesStore?.firstMatch(for: name),
-                   let glyph = Self.glyphForCurrentStyle(folderName: name, proposedGlyph: rule.symbol, customMappings: customMappings) {
-                    return Self.makeItem(
-                        url: url,
-                        glyph: glyph,
-                        ruleSymbolColor: rule.symbolColor,
-                        ruleFolderColor: rule.folderColor,
-                        source: .rule(ruleName: rule.name),
-                        trackAISuggestion: false,
-                        aiSymbol: nil
-                    )
-                } else if SmartContentDetectionStore.isEnabled, let detectedSym = FolderTypeDetector.detectType(at: url),
-                          let glyph = Self.smartDetectionGlyph(for: detectedSym, folderName: name, customMappings: customMappings) {
-                    return Self.makeItem(
-                        url: url,
-                        glyph: glyph,
-                        ruleSymbolColor: nil,
-                        ruleFolderColor: nil,
-                        source: .smartDetection(type: Self.smartDetectionTypeDescription(for: detectedSym)),
-                        trackAISuggestion: false,
-                        aiSymbol: nil
-                    )
-                } else if let customSym = customMappings[name.lowercased()],
-                          let glyph = Self.glyphForCurrentStyle(folderName: name, proposedGlyph: customSym, customMappings: customMappings) {
-                    return Self.makeItem(
-                        url: url,
-                        glyph: glyph,
-                        ruleSymbolColor: nil,
-                        ruleFolderColor: nil,
-                        source: .customMapping,
-                        trackAISuggestion: false,
-                        aiSymbol: nil
-                    )
-                } else if let matchResult = geminiMatches[name] {
-                    // Use Gemini match only when the model is confident AND the
-                    // glyph is renderable for the current style. Below 0.7 we
-                    // treat the folder as unassigned so the user can pick a
-                    // symbol manually instead of getting a generic "folder.fill".
-                    if matchResult.confidence >= SymbolSearchEngine.minimumConfidence, Self.isValidAIGlyph(matchResult.symbol) {
-                        return Self.makeItem(
-                            url: url,
-                            glyph: matchResult.symbol,
-                            ruleSymbolColor: nil,
-                            ruleFolderColor: nil,
-                            source: .aiSuggestion(confidence: matchResult.confidence),
-                            trackAISuggestion: true,
-                            aiSymbol: matchResult.symbol
-                        )
-                    } else {
-                        return FolderItem.unassigned(url: url)
-                    }
-                } else {
-                    // AI didn't return a result for this folder — leave it
-                    // unassigned rather than papering over with a fallback.
-                    return FolderItem.unassigned(url: url)
-                }
-            }
-            items = newItems
+            items = finalItems
 
         } catch let error as GeminiService.GeminiError {
             errorInfo = ErrorInfo(
@@ -1002,11 +1015,16 @@ final class IconicViewModel: ObservableObject {
                 isWarning: true
             )
             lastError = "Gemini AI unavailable: \(error.localizedDescription). Folders without a confident match will be left unassigned."
-            // The batch call failed entirely — fall back to local matching,
-            // which will mark unassigned folders as such instead of giving
-            // them a generic fallback symbol.
-            matchingMode = .local
-            await scanWithLocalMatcher(urls: urls, customMappings: customMappings)
+            // Fall back to local matching only when the very first chunk failed
+            // (allGeminiMatches is empty). If we already have partial results,
+            // keep them and render whatever we got.
+            if allGeminiMatches.isEmpty {
+                matchingMode = .local
+                await scanWithLocalMatcher(urls: urls, customMappings: customMappings)
+            } else {
+                // Partial success — show what we have with a warning
+                items = makeItems(from: allGeminiMatches, for: urls)
+            }
         } catch {
             errorInfo = ErrorInfo(
                 message: "AI matching failed: \(error.localizedDescription)",
@@ -1015,8 +1033,12 @@ final class IconicViewModel: ObservableObject {
                 isWarning: true
             )
             lastError = "Gemini AI failed: \(error.localizedDescription). Folders without a confident match will be left unassigned."
-            matchingMode = .local
-            await scanWithLocalMatcher(urls: urls, customMappings: customMappings)
+            if allGeminiMatches.isEmpty {
+                matchingMode = .local
+                await scanWithLocalMatcher(urls: urls, customMappings: customMappings)
+            } else {
+                items = makeItems(from: allGeminiMatches, for: urls)
+            }
         }
     }
 

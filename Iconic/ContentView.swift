@@ -16,7 +16,6 @@ struct ContentView: View {
     @EnvironmentObject private var backupStore: BackupStore
     @State private var isDropTargeted = false
     @State private var showingShortcutsHelp = false
-    @State private var showingDiscoveryPanel = false
     @State private var showingRestoreConfirm = false
     @State private var recentFolders: [RecentFolder] = []
     @State private var favoriteFolders: [FavoriteFolder] = []
@@ -453,40 +452,11 @@ struct ContentView: View {
             Button {
                 showingShortcutsHelp = true
             } label: {
-                Image(systemName: "questionmark.circle")
+                Image(systemName: "command")
             }
             .buttonStyle(.borderless)
             .help("Keyboard Shortcuts (\u{2318}/)")
             .accessibilityLabel("Show keyboard shortcuts")
-
-            Button {
-                showingDiscoveryPanel = true
-            } label: {
-                Image(systemName: "sparkles")
-            }
-            .buttonStyle(.borderless)
-            .help("Discover Features")
-            .accessibilityLabel("Discover features")
-            .popover(isPresented: $showingDiscoveryPanel, arrowEdge: .top) {
-                FeatureDiscoveryPanel(isShown: $showingDiscoveryPanel) { action in
-                    showingDiscoveryPanel = false
-                    switch action {
-                    case .browseSymbols:
-                        if vm.items.first != nil {
-                            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-                        }
-                    case .createTemplate:
-                        if let firstItem = vm.items.first {
-                            templateSourceItem = firstItem
-                            showingSaveTemplate = true
-                        }
-                    case .openPreferences:
-                        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-                    case .showShortcuts:
-                        showingShortcutsHelp = true
-                    }
-                }
-            }
 
             Button {
                 vm.chooseFolder()
@@ -1162,94 +1132,6 @@ struct NewBadge: View {
             .background(Color.orange)
             .foregroundStyle(.white)
             .cornerRadius(3)
-    }
-}
-
-struct FeatureDiscoveryPanel: View {
-    @Binding var isShown: Bool
-    let onAction: (DiscoveryAction) -> Void
-
-    enum DiscoveryAction {
-        case browseSymbols
-        case createTemplate
-        case openPreferences
-        case showShortcuts
-    }
-
-    private var features: [(icon: String, title: String, description: String, action: DiscoveryAction)] {
-        [
-            ("square.grid.3x3.fill", "Browse 6,000+ Symbols", "Use the Symbol Browser to find any SF Symbol", .browseSymbols),
-            ("square.grid.2x2", "Save Templates", "Create reusable icon styles with colors", .createTemplate),
-            ("command", "Keyboard Shortcuts", "Press \u{2318}/ to see all shortcuts", .showShortcuts),
-            ("menubar.rectangle", "Menu Bar Mode", "Keep Iconic running when window closes", .openPreferences),
-        ]
-    }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Label("Discover Features", systemImage: "sparkles")
-                    .font(.headline)
-                Spacer()
-                Button {
-                    isShown = false
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Close discover features")
-            }
-            .padding(12)
-
-            Divider()
-
-            ScrollView {
-                VStack(spacing: 0) {
-                    ForEach(Array(features.enumerated()), id: \.offset) { index, feature in
-                        Button {
-                            onAction(feature.action)
-                        } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: feature.icon)
-                                    .font(.title3)
-                                    .foregroundStyle(.tint)
-                                    .frame(width: 28)
-
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(feature.title)
-                                        .font(.subheadline)
-                                        .fontWeight(.medium)
-                                        .foregroundStyle(.primary)
-                                    Text(feature.description)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-
-                                Spacer()
-
-                                Image(systemName: "chevron.right")
-                                    .font(.caption)
-                                    .foregroundStyle(.tertiary)
-                            }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 10)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-
-                        if index < features.count - 1 {
-                            Divider()
-                                .padding(.leading, 52)
-                        }
-                    }
-                }
-            }
-        }
-        .frame(width: 360, height: 320)
-        .background(.regularMaterial)
-        .cornerRadius(12)
-        .shadow(radius: 16)
     }
 }
 

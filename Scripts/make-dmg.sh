@@ -1,12 +1,15 @@
 #!/bin/bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
 APP_NAME="Iconic"
 APP_VERSION="1.0"
 DMG_NAME="Iconic-1.0-arm64.dmg"
 VOLUME_NAME="Iconic 1.0"
-SOURCE_APP="/Users/himank/Desktop/Iconic/build/DD/Build/Products/Debug/Iconic.app"
-DIST_DIR="/Users/himank/Desktop/Iconic/dist"
+SOURCE_APP="${PROJECT_ROOT}/build/DD/Build/Products/Debug/Iconic.app"
+DIST_DIR="${PROJECT_ROOT}/dist"
 DMG_PATH="${DIST_DIR}/${DMG_NAME}"
 STAGING_DIR="${DIST_DIR}/Iconic-staging"
 

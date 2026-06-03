@@ -267,7 +267,7 @@ struct FolderRowView: View {
         } else {
             HStack(spacing: K.tightSpacing) {
                 Image(systemName: glyph)
-                    .font(.caption2)
+                    .font(.caption)
                 Text(glyph)
                     .font(.caption)
                     .foregroundStyle(.secondary)

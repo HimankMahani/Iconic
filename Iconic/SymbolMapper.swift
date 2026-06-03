@@ -390,10 +390,10 @@ struct SymbolMapper {
 
         // System / common folders
         ("desktop", "macbook"),
-        ("downloads", "arrow.down.circle.fill"),
-        ("download", "arrow.down.circle.fill"),
-        ("upload", "arrow.up.circle.fill"),
-        ("uploads", "arrow.up.circle.fill"),
+        ("downloads", "tray.and.arrow.down"),
+        ("download", "tray.and.arrow.down"),
+        ("upload", "tray.and.arrow.up"),
+        ("uploads", "tray.and.arrow.up"),
         ("trash", "trash.fill"),
         ("archive", "archivebox.fill"),
         ("archives", "archivebox.fill"),

@@ -1,0 +1,106 @@
+name: Release
+
+# Builds a universal (arm64 + x86_64) DMG and attaches it to the
+# GitHub Release when a version tag is pushed.
+
+on:
+  push:
+    tags: ['v*']
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release:
+    name: Build Universal DMG & Release
+    runs-on: macos-15
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Build arm64
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project Iconic.xcodeproj \
+            -scheme Iconic \
+            -configuration Release \
+            -destination 'generic/platform=macOS' \
+            -derivedDataPath build/arm64 \
+            ARCHS=arm64 \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Build x86_64
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project Iconic.xcodeproj \
+            -scheme Iconic \
+            -configuration Release \
+            -destination 'generic/platform=macOS' \
+            -derivedDataPath build/x86_64 \
+            ARCHS=x86_64 \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Create universal app
+        run: |
+          ARM_APP=$(find build/arm64/Build/Products/Release -maxdepth 1 -name 'Iconic.app' | head -1)
+          X86_APP=$(find build/x86_64/Build/Products/Release -maxdepth 1 -name 'Iconic.app' | head -1)
+
+          if [ -z "$ARM_APP" ] || [ -z "$X86_APP" ]; then
+            echo "::error::Could not find built .app bundles"
+            exit 1
+          fi
+
+          # Stage the arm64 app as base
+          mkdir -p staging
+          cp -R "$ARM_APP" staging/Iconic.app
+
+          # Replace binary with universal fat binary
+          lipo -create \
+            "$ARM_APP/Contents/MacOS/Iconic" \
+            "$X86_APP/Contents/MacOS/Iconic" \
+            -output staging/Iconic.app/Contents/MacOS/Iconic
+
+          # Verify universal
+          lipo -info staging/Iconic.app/Contents/MacOS/Iconic
+
+          # Verify bundle
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" staging/Iconic.app/Contents/Info.plist
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" staging/Iconic.app/Contents/Info.plist
+
+      - name: Create DMG
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          DMG_NAME="Iconic-${VERSION}-universal.dmg"
+
+          hdiutil create \
+            -volname "Iconic" \
+            -srcfolder staging \
+            -ov \
+            -format UDZO \
+            "$DMG_NAME"
+
+          # Generate checksum
+          shasum -a 256 "$DMG_NAME" > "${DMG_NAME}.sha256"
+
+          echo "DMG_NAME=$DMG_NAME" >> "$GITHUB_ENV"
+          echo "Created $DMG_NAME"
+          cat "${DMG_NAME}.sha256"
+
+      - name: Upload DMG to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ env.DMG_NAME }}
+            ${{ env.DMG_NAME }}.sha256
+          fail_on_unmatched_files: true

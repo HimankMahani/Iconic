@@ -151,9 +151,9 @@ final class FolderItem: ObservableObject, Identifiable {
     @Published var preview: NSImage?
     @Published var originalIcon: NSImage?
     @Published var status: FolderItemStatus = .pending
-    @Published var symbolOpacity: Double = Self.defaultSymbolOpacity
-    @Published var symbolScale: Double = Self.defaultSymbolScale
-    @Published var symbolOffsetY: Double = Self.defaultSymbolOffsetY
+    @Published var symbolOpacity: Double = 1.0
+    @Published var symbolScale: Double = 1.0
+    @Published var symbolOffsetY: Double = 0.0
     @Published var customImage: NSImage?
     @Published var symbolGradientEnd: NSColor?
     @Published var matchSource: MatchSource = .localDictionary

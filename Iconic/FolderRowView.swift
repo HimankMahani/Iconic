@@ -510,7 +510,7 @@ struct FolderRowView: View {
                     }
                 }
             }
-            if item.symbolNames.count < IconRenderer.Layout.maxLayers {
+            if item.symbolNames.count < 3 {
                 HStack {
                     TextField(IconStyleStore.current == .emoji ? "Add emoji layer" : "Add symbol layer", text: $newLayerSymbol)
                         .textFieldStyle(.roundedBorder)
@@ -737,7 +737,7 @@ struct FolderRowView: View {
 
     private func addLayer() {
         let trimmed = newLayerSymbol.trimmingCharacters(in: .whitespaces)
-        guard isValidGlyph(trimmed), item.symbolNames.count < IconRenderer.Layout.maxLayers else { return }
+        guard isValidGlyph(trimmed), item.symbolNames.count < 3 else { return }
         item.symbolNames.append(trimmed)
         newLayerSymbol = ""
         onAdjust()
